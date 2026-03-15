@@ -33,17 +33,17 @@
 * **Add Your Own** – You can also easily integrate your own attack or defense into our benchmark to systematically assess how well it perform.
 
 
-* ## Table of Contents
+## Table of Contents
 
-	* [📝 Quick Start](#-quick-start)
-		* [⚙️ Installation](#-installation)
-		* [📌 Ready-to-use Tools](#-ready-to-use-tools)
-		* [📈 Run Evaluation](#-run-evaluation)
-		* [🔍 Search-based Attacks](#-search-based-attacks)
-		* [🤖 Agent Benchmarks](#-agent-benchmarks)
-	* [🙋🏻‍♀️ Add your own attacks / defenses](#-add-your-own-attacks--defenses)
-	<!-- * [🔍 Attack & Defense Details](#-attack--defense-details)
-	* [🤝 Contribution Guide](#-contribution-guide) -->
+* [📝 Quick Start](#-quick-start)
+	* [⚙️ Installation](#-installation)
+	* [📌 Ready-to-use Tools](#-ready-to-use-tools)
+	* [📈 Run Evaluation](#-run-evaluation)
+	* [🔍 Search-based Attacks](#-search-based-attacks)
+	* [🤖 Agent Benchmarks](#-agent-benchmarks)
+* [🙋🏻‍♀️ Add your own attacks / defenses](#-add-your-own-attacks--defenses)
+<!-- * [🔍 Attack & Defense Details](#-attack--defense-details)
+* [🤝 Contribution Guide](#-contribution-guide) -->
 
 ## 📝 Quick Start
 
