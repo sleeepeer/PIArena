@@ -76,7 +76,7 @@ from piarena.llm import Model
 
 llm = Model("Qwen/Qwen3-4B-Instruct-2507")
 defense = get_defense("pisanitizer")
-attack = get_attack("nanogcg")
+attack = get_attack("combined")
 ```
 
 ### 📈 Run Evaluation
