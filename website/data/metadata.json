@@ -1,0 +1,219 @@
+{
+  "datasets": {
+    "squad_v2": {
+      "display": "SQuAD v2",
+      "type": "Question Answering",
+      "metric": "LLM-as-a-Judge",
+      "samples": 200,
+      "group": "short"
+    },
+    "dolly_qa": {
+      "display": "Dolly (QA)",
+      "type": "Question Answering",
+      "metric": "LLM-as-a-Judge",
+      "samples": 200,
+      "group": "short"
+    },
+    "dolly_ie": {
+      "display": "Dolly (Info Ext.)",
+      "type": "Information Extraction",
+      "metric": "LLM-as-a-Judge",
+      "samples": 200,
+      "group": "short"
+    },
+    "dolly_summ": {
+      "display": "Dolly (Summ.)",
+      "type": "Summarization",
+      "metric": "LLM-as-a-Judge",
+      "samples": 200,
+      "group": "short"
+    },
+    "nq_rag": {
+      "display": "NQ",
+      "type": "RAG",
+      "metric": "LLM-as-a-Judge",
+      "samples": 100,
+      "group": "short"
+    },
+    "msmarco_rag": {
+      "display": "MS-MARCO",
+      "type": "RAG",
+      "metric": "LLM-as-a-Judge",
+      "samples": 100,
+      "group": "short"
+    },
+    "hotpotqa_rag": {
+      "display": "HotpotQA",
+      "type": "RAG",
+      "metric": "LLM-as-a-Judge",
+      "samples": 100,
+      "group": "short"
+    },
+    "hotpotqa_long": {
+      "display": "HotpotQA (Long)",
+      "type": "Question Answering",
+      "metric": "F1-Score",
+      "samples": 100,
+      "group": "long"
+    },
+    "qasper": {
+      "display": "Qasper",
+      "type": "Question Answering",
+      "metric": "F1-Score",
+      "samples": 100,
+      "group": "long"
+    },
+    "govreport": {
+      "display": "GovReport",
+      "type": "Summarization",
+      "metric": "ROUGE-L",
+      "samples": 100,
+      "group": "long"
+    },
+    "multinews": {
+      "display": "MultiNews",
+      "type": "Summarization",
+      "metric": "ROUGE-L",
+      "samples": 100,
+      "group": "long"
+    },
+    "passage_retrieval": {
+      "display": "PassageRetrieval",
+      "type": "Info Retrieval",
+      "metric": "Retrieval Score",
+      "samples": 100,
+      "group": "long"
+    },
+    "lcc": {
+      "display": "LCC",
+      "type": "Code Gen.",
+      "metric": "Code Similarity",
+      "samples": 100,
+      "group": "long"
+    },
+    "wasp": {
+      "display": "WASP",
+      "type": "Agent",
+      "metric": "Keyword",
+      "samples": 84,
+      "group": "agent"
+    },
+    "opi": {
+      "display": "OPI",
+      "type": "General",
+      "metric": "Task-specific",
+      "samples": null,
+      "group": "external"
+    },
+    "sep": {
+      "display": "SEP",
+      "type": "General",
+      "metric": "LLM-as-a-Judge",
+      "samples": null,
+      "group": "external"
+    }
+  },
+  "defenses": {
+    "none": {
+      "display": "No Defense",
+      "type": "Baseline"
+    },
+    "pisanitizer": {
+      "display": "PISanitizer",
+      "type": "Prevention"
+    },
+    "secalign": {
+      "display": "SecAlign++",
+      "type": "Prevention"
+    },
+    "datafilter": {
+      "display": "DataFilter",
+      "type": "Prevention"
+    },
+    "promptarmor": {
+      "display": "PromptArmor",
+      "type": "Prevention"
+    },
+    "datasentinel": {
+      "display": "DataSentinel",
+      "type": "Detection"
+    },
+    "promptguard": {
+      "display": "PromptGuard",
+      "type": "Detection"
+    },
+    "attentiontracker": {
+      "display": "Attn.Tracker",
+      "type": "Detection"
+    },
+    "piguard": {
+      "display": "PIGuard",
+      "type": "Detection"
+    }
+  },
+  "attacks": {
+    "none": {
+      "display": "No Attack"
+    },
+    "direct": {
+      "display": "Direct"
+    },
+    "combined": {
+      "display": "Combined"
+    },
+    "strategy": {
+      "display": "Strategy"
+    },
+    "gcg": {
+      "display": "GCG"
+    },
+    "knowledge_corruption": {
+      "display": "Know. Corruption"
+    },
+    "default": {
+      "display": "Default"
+    }
+  },
+  "llms": {
+    "qwen3-4b": {
+      "display": "Qwen3-4B-Instruct",
+      "access": "Open"
+    },
+    "qwen3-30b": {
+      "display": "Qwen3-30B-Instruct",
+      "access": "Open"
+    },
+    "llama3.3-70b": {
+      "display": "Llama3.3-70B-Instruct",
+      "access": "Open"
+    },
+    "gpt-oss-120b": {
+      "display": "gpt-oss-120b",
+      "access": "Open"
+    },
+    "gpt-4o": {
+      "display": "GPT-4o",
+      "access": "Closed"
+    },
+    "gpt-4o-mini": {
+      "display": "GPT-4o-mini",
+      "access": "Closed"
+    },
+    "gpt-5": {
+      "display": "GPT-5",
+      "access": "Closed"
+    },
+    "claude-sonnet-4.5": {
+      "display": "Claude-Sonnet-4.5",
+      "access": "Closed"
+    },
+    "gemini-3-pro": {
+      "display": "Gemini-3-Pro",
+      "access": "Closed"
+    },
+    "gemini-3-flash": {
+      "display": "Gemini-3-Flash",
+      "access": "Closed"
+    }
+  }
+}

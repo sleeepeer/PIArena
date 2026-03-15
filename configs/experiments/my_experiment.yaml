@@ -1,0 +1,15 @@
+dataset: open_prompt_injection
+backend_llm: Qwen/Qwen3-4B-Instruct-2507
+attack: combined
+defense: pisanitizer
+name: my_experiment
+seed: 42
+
+# Optional: config passed to attack/defense constructors
+attack_config:
+  inject_position: end
+
+defense_config:
+  smooth_win: 5
+  max_gap: 10
+  threshold: 0.01

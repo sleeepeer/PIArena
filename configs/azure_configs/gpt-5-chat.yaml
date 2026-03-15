@@ -1,0 +1,6 @@
+default:
+    - client_class: "openai.AzureOpenAI"
+      azure_deployment: "gpt-5-chat" # name of the model
+      api_key: "API_KEY_HERE" # your Azure OpenAI API key
+      azure_endpoint: "https://your-endpoint.openai.azure.com/" # your Azure OpenAI endpoint
+      api_version: "2024-12-01-preview" # API version
