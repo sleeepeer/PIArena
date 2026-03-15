@@ -124,7 +124,7 @@ python scripts/run.py
 
 ### 🔍 Search-based Attacks
 
-PIArena supports search-based attacks (PAIR, TAP, Strategy Search) that iteratively refine prompt injections using an attacker LLM. Use `main_search.py` for these attacks:
+PIArena supports search-based attacks (PAIR, TAP, Strategy Search) that iteratively refine injected prompts using an attack LLM. Use `main_search.py` for these attacks:
 
 ```bash
 # --attack can be tap, pair, strategy_search
