@@ -137,6 +137,10 @@ python scripts/run_search.py
 
 See [Search-based Attacks](https://piarena.vercel.app/#/docs/strategy-search) for details.
 
+### 🔍 Reinforcement Learning-based Attacks
+
+Building upon PIArena (including defenses and benchmarks), this repository provides the code for [PISmith](https://github.com/albert-y1n/PISmith), a reinforcement learning-based framework for red teaming prompt injection defenses.
+
 ### 🤖 Agent Benchmarks
 
 PIArena also supports agentic benchmarks: [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) and [AgentDojo](https://github.com/ethz-spylab/agentdojo).
