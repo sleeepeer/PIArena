@@ -110,21 +110,21 @@ python scripts/run.py
 
 **Available Defenses:**
 - `none` - No defense (baseline, default)
-- `pisanitizer` - [PISanitizer: Preventing Prompt Injection to Long-Context LLMs via Prompt Sanitization](https://arxiv.org/abs/2511.10720)
+- `datasentinel` - [DataSentinel: A Game-Theoretic Detection of Prompt Injection Attacks](https://arxiv.org/abs/2504.11358)
 - `attentiontracker` - [Attention Tracker: Detecting Prompt Injection Attacks in LLMs](https://arxiv.org/abs/2411.00348)
+- `piguard` - [PIGuard: Prompt Injection Guardrail via Mitigating Overdefense for Free](https://arxiv.org/abs/2410.22770)
 - `promptguard` - [Meta Prompt Guard](https://huggingface.co/meta-llama/Prompt-Guard-86M)
+- `secalign` - [SecAlign: Defending Against Prompt Injection with Preference Optimization](https://arxiv.org/abs/2410.05451) (uses [Meta-SecAlign](https://arxiv.org/abs/2507.02735) model)
 - `promptlocate` - [PromptLocate: Localizing Prompt Injection Attacks](https://arxiv.org/abs/2510.12252)
 - `promptarmor` - [PromptArmor: Simple yet Effective Prompt Injection Defenses](https://arxiv.org/abs/2507.15219)
-- `datasentinel` - [DataSentinel: A Game-Theoretic Detection of Prompt Injection Attacks](https://arxiv.org/abs/2504.11358)
+- `pisanitizer` - [PISanitizer: Preventing Prompt Injection to Long-Context LLMs via Prompt Sanitization](https://arxiv.org/abs/2511.10720)
 - `datafilter` - [Defending Against Prompt Injection with DataFilter](https://arxiv.org/abs/2510.19207)
-- `piguard` - [PIGuard: Prompt Injection Guardrail via Mitigating Overdefense for Free](https://arxiv.org/abs/2410.22770)
-- `secalign` - [SecAlign: Defending Against Prompt Injection with Preference Optimization](https://arxiv.org/abs/2410.05451) (uses [Meta-SecAlign](https://arxiv.org/abs/2507.02735) model)
 
 <!-- You can go to [this link]() to see all supported datasets, attacks and defenses. -->
 
 ### 🔍 Search-based Attacks
 
-PIArena supports search-based attacks (PAIR, TAP, Strategy Search) that iteratively refine prompt injections using an attacker LLM. Use `main_search.py` for these attacks:
+PIArena supports search-based attacks (PAIR, TAP, Strategy Search) that iteratively refine injected prompts using an attack LLM. Use `main_search.py` for these attacks:
 
 ```bash
 # --attack can be tap, pair, strategy_search
@@ -136,6 +136,10 @@ python scripts/run_search.py
 ```
 
 See [Search-based Attacks](https://piarena.vercel.app/#/docs/strategy-search) for details.
+
+### 🔍 Reinforcement Learning-based Attacks
+
+Building upon PIArena (including defenses and benchmarks), this repository provides the code for [PISmith](https://github.com/albert-y1n/PISmith), a reinforcement learning-based framework for red teaming prompt injection defenses.
 
 ### 🤖 Agent Benchmarks
 
