@@ -1,3 +1,4 @@
+import threading
 import torch
 import copy
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -40,6 +41,7 @@ class PISanitizerDefense(BaseDefense):
         self._sanitizer_model.eval()
         if not self._sanitizer_tokenizer.pad_token:
             self._sanitizer_tokenizer.pad_token = self._sanitizer_tokenizer.eos_token
+        self._lock = threading.Lock()
 
     def execute(self, target_inst, context):
         cleaned_context = self._sanitize(
@@ -66,6 +68,10 @@ class PISanitizerDefense(BaseDefense):
     def _sanitize(self, context, smooth_win, max_gap, threshold):
         assert context is not None, "Context is required"
 
+        with self._lock:
+            return self._sanitize_impl(context, smooth_win, max_gap, threshold)
+
+    def _sanitize_impl(self, context, smooth_win, max_gap, threshold):
         model = self._sanitizer_model
         tokenizer = self._sanitizer_tokenizer
 
