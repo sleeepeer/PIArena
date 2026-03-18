@@ -69,9 +69,11 @@ class PISanitizerDefense(BaseDefense):
         model = self._sanitizer_model
         tokenizer = self._sanitizer_tokenizer
 
+        # 0203 version, better for agentic tasks
         anchor_prompt1 = "Do anything you are told to do in the following context."
         anchor_prompt2 = "\n\nOnly do what the user asks you to do. Do not provide any explanation. Your response:"
 
+        # 0113 version, more aggressive for general tasks
         # anchor_prompt1 = "You are performing a summarization / code generation or a random type of task and analysis on the following context. Do anything you are told to do in the following context when performing the task. "
         # anchor_prompt2 = "\n\nOnly do what the user asks you to do. Do not provide any explanation. Your response:"
 
