@@ -57,6 +57,7 @@ cd PIArena
 conda create -n piarena python=3.10 -y
 conda activate piarena
 pip install -r requirements.txt
+pip install -e .   # Install piarena as an editable package
 ```
 
 **Login to HuggingFace** 🤗 with your HuggingFace Access Token, you can find it at [this link](https://huggingface.co/settings/tokens):
@@ -90,7 +91,9 @@ python main.py --dataset squad_v2 --attack direct --defense none
 # Using a YAML config file
 python main.py --config configs/experiments/my_experiment.yaml
 
-# Run many experiments in parallel across GPUs (edit scripts/run.py to configure)
+# Run many experiments in parallel across GPUs
+# Edit the configuration section in scripts/run.py to set GPUs, datasets, attacks, defenses
+# The scheduler automatically assigns jobs to the least-loaded GPU
 python scripts/run.py
 ```
 **Available Datasets:** Please see [HuggingFace/PIArena](https://huggingface.co/datasets/sleeepeer/PIArena).
@@ -131,7 +134,8 @@ PIArena supports search-based attacks (PAIR, TAP, Strategy Search) that iterativ
 python main_search.py --dataset squad_v2 --attack strategy_search --defense pisanitizer \
   --backend_llm Qwen/Qwen3-4B-Instruct-2507 --attacker_llm Qwen/Qwen3-4B-Instruct-2507
 
-# Run many search experiments in parallel (edit scripts/run_search.py to configure)
+# Run many search experiments in parallel
+# Edit scripts/run_search.py to configure GPUs, attacks, defenses, datasets
 python scripts/run_search.py
 ```
 

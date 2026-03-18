@@ -12,6 +12,7 @@ This is the public repo of PIArena — do not leak private info. PIArena is a pl
 # Setup
 conda create -n piarena python=3.10 -y && conda activate piarena
 pip install -r requirements.txt
+pip install -e .  # Install piarena as editable package (required for batch scripts)
 # torch/vllm are commented out in requirements.txt — install separately for your CUDA version
 huggingface-cli login
 
@@ -107,8 +108,10 @@ CLI args > YAML config (`configs/experiments/`) > hardcoded defaults. YAML suppo
 - `main.py` — Main evaluation pipeline (GPU required)
 - `main_search.py` — Search-based attacks: PAIR, TAP, strategy_search (needs `--backend_llm` + `--attacker_llm`)
 - `main_injecagent.py` / `main_agentdojo.py` — Agent benchmarks
-- `scripts/run.py` — Batch runner for standard attacks with multi-GPU scheduling (auto-detects local vs Slurm)
+- `scripts/run.py` — Batch runner for standard attacks
 - `scripts/run_search.py` — Batch runner for search-based attacks
+- `scripts/run_injecagent.py` / `scripts/run_agentdojo.py` — Batch runners for agent benchmarks
+- All batch scripts use `GPUScheduler` from `piarena/gpu_utils.py` for least-loaded GPU scheduling (auto-detects local vs Slurm)
 
 ### Data
 

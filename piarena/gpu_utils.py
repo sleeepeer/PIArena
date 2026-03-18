@@ -9,11 +9,10 @@ import os
 import subprocess
 import time
 
-import torch
-
 
 def detect_mode():
     """Detect whether to run locally or via Slurm."""
+    import torch
     gpu_count = torch.cuda.device_count()
     print(f"GPUs available: {gpu_count}")
     return "local" if gpu_count > 0 else "slurm"
