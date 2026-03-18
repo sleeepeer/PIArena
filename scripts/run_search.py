@@ -54,6 +54,8 @@ name = "search_experiment"               # Experiment name (used for result dire
 gpus = [0, 1]                     # GPU IDs to use
 processes_per_gpu = 1             # Search attacks are GPU-intensive; typically 1 per GPU
 
+scheduler = GPUScheduler(gpus, processes_per_gpu)
+
 all_attacks = [
     "pair",                       # PAIR: iterative refinement attack
     "tap",                        # TAP: tree-based attack with pruning
