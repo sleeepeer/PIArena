@@ -37,6 +37,8 @@ class PISanitizerDefense(BaseDefense):
         if self._sanitizer_model is None or self._sanitizer_tokenizer is None:
             print("Loading sanitization model...")
             model_id = "sleeepeer/meta-llama-Llama-3.1-8B-Instruct-dolly_new_1200_0113-42-202602031350"
+            # model_id = "sleeepeer/meta-llama-Llama-3.1-8B-Instruct-cold_start-dolly_new_1200_0113-42-202601130038"
+            # model_id = "meta-llama/Llama-3.1-8B-Instruct"
             self._sanitizer_model = AutoModelForCausalLM.from_pretrained(
                 model_id, dtype="auto", device_map="auto"
             )
