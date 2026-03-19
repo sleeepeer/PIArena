@@ -23,7 +23,8 @@ from typing import List, Dict, Tuple, Optional, Any, Union
 import numpy as np
 
 from ...llm import Model
-from ...defenses import get_defense, DEFENSES_BATCH
+from ...defenses import get_defense
+from ...defenses.base import BaseDefense
 from ..base import BaseAttack, register_attack
 from ...evaluations import llm_judge, llm_judge_batch
 from .init_strategies import (
@@ -411,6 +412,7 @@ class StrategySearchAttacker:
     
     def __init__(
         self,
+        defense: Optional[BaseDefense],
         defense_name: str,
         target_llm: Model,
         attacker_llm: Model,
@@ -431,17 +433,14 @@ class StrategySearchAttacker:
         self.inject_middle = inject_middle
         self.verbose = verbose
         
-        # Instantiate defense via OOP factory
-        self.defense_instance = get_defense(self.defense_name)
-        
-        self.defense_func_batch = DEFENSES_BATCH.get(self.defense_name)
-        
-        # Print batch mode status (always print, not just when verbose)
-        defense_func_batch_name = getattr(self.defense_func_batch, '__name__', 'None') if self.defense_func_batch else 'None'
-        if self.defense_func_batch:
-            print(f"✅ Strategy Search: Batch defense enabled for '{self.defense_name}' (function: {defense_func_batch_name}, vLLM acceleration)")
-        else:
-            print(f"⚠️ Strategy Search: No batch defense available for '{self.defense_name}', using sequential evaluation")
+        self.defense = defense or get_defense(self.defense_name)
+        self.defense_name = self.defense.name.lower()
+        self.uses_custom_batch = (
+            self.defense.__class__.get_response_batch is not BaseDefense.get_response_batch
+            or self.defense.__class__.execute_batch is not BaseDefense.execute_batch
+        )
+        batch_mode = "custom batch implementation" if self.uses_custom_batch else "default loop-based batch fallback"
+        print(f"✅ Strategy Search: Using defense batch API for '{self.defense_name}' ({batch_mode})")
         
         # Validate attacker_llm
         if self.attacker_llm is None:
@@ -926,7 +925,7 @@ class StrategySearchAttacker:
         
         try:
             # Execute defense
-            defense_result = self.defense_instance.get_response(
+            defense_result = self.defense.get_response(
                 target_inst=case['target_inst'],
                 context=attack_prompt,
                 llm=self.target_llm,
@@ -1017,7 +1016,7 @@ class StrategySearchAttacker:
         generation: int = 0,
     ) -> List[float]:
         """
-        Batch evaluate candidates (only when defense supports batch processing).
+        Batch evaluate candidates through the defense object API.
         
         Args:
             candidates: List of attack candidates
@@ -1028,22 +1027,6 @@ class StrategySearchAttacker:
         Returns:
             List of fitness scores
         """
-        if not self.defense_func_batch:
-            # No batch support, fall back to sequential with early stop
-            if self.verbose:
-                print(f"  ⚠️ No batch defense available, using sequential evaluation ({len(candidates)} candidates)")
-            fitnesses = []
-            for i, c in enumerate(candidates):
-                fitness = self._evaluate_candidate(c, case, evaluator, i, generation)
-                fitnesses.append(fitness)
-                # Early stop on success
-                if fitness >= self.config.success_threshold:
-                    if self.verbose:
-                        print(f"  ✅ Found success (fitness={fitness:.2f}), stopping early (skipped {len(candidates) - i - 1})")
-                    fitnesses.extend([0.0] * (len(candidates) - i - 1))
-                    break
-            return fitnesses
-        
         context = case['context']
         
         # Build batch inputs
@@ -1051,28 +1034,14 @@ class StrategySearchAttacker:
         attack_prompts = [self._find_injection_position(context, c.injected_prompt) for c in candidates]
         
         try:
-            # Batch execute defense (uses vLLM for acceleration)
+            # Batch execute defense through the class-owned batch API.
             if self.verbose:
-                print(f"  ⚡ Executing batch defense with vLLM: {len(candidates)} candidates")
-            # Pass attacker_vllm_model to defense_batch to reuse vLLM instance if same model
-            defense_kwargs = {"llm": self.target_llm}
-            if self.attacker_vllm is not None:
-                # Check if attacker_vllm and target_llm are same model
-                # Use attacker_vllm.model_name_or_path (vLLM instance) instead of attacker_llm
-                attacker_model_path = getattr(self.attacker_vllm, 'model_name_or_path', None) if self.attacker_vllm else None
-                target_model_path = getattr(self.target_llm, 'model_name_or_path', None) if self.target_llm else None
-                if attacker_model_path and target_model_path and attacker_model_path == target_model_path:
-                    # Pass attacker_vllm_model to defense_batch for reuse (supported by none, promptarmor, etc.)
-                    defense_kwargs["attacker_vllm_model"] = self.attacker_vllm
-            
-            # Debug: print which defense batch function is being called
-            defense_func_name = getattr(self.defense_func_batch, '__name__', str(self.defense_func_batch))
-            print(f"🔍 Calling defense_batch function: {defense_func_name} for defense_name='{self.defense_name}'")
-            
-            defense_results = self.defense_func_batch(
-                target_insts,
-                attack_prompts,
-                **defense_kwargs
+                print(f"  ⚡ Executing defense.get_response_batch for {len(candidates)} candidates")
+
+            defense_results = self.defense.get_response_batch(
+                target_insts=target_insts,
+                contexts=attack_prompts,
+                llm=self.target_llm,
             )
             
             if self.verbose:
@@ -1345,7 +1314,7 @@ class StrategySearchAttacker:
         n_strategies = self.config.population_size
         
         # Check if batch mode is available
-        use_batch = self.defense_func_batch is not None
+        use_batch = True
         
         if self.verbose:
             print(f"\n{'='*60}")
@@ -1591,7 +1560,7 @@ class StrategySearchAttack(BaseAttack):
     """Evolutionary strategy search attack optimizer.
 
     Wraps the StrategySearchAttacker for use with the BaseAttack interface.
-    Requires `llm`, `attacker_llm`, and `defense_name` kwargs at execute() time.
+    Requires `llm`, `attacker_llm`, and either `defense` or `defense_name` kwargs at execute() time.
     """
 
     name = "strategy_search"
@@ -1606,6 +1575,7 @@ class StrategySearchAttack(BaseAttack):
         injected_task_answer="",
         llm=None,
         attacker_llm=None,
+        defense=None,
         defense_name="none",
         evaluator=None,
         inject_position="end",
@@ -1622,6 +1592,7 @@ class StrategySearchAttack(BaseAttack):
             inject_times=inject_times,
             llm=llm,
             attacker_llm=attacker_llm,
+            defense=defense,
             defense_name=defense_name,
             evaluator=evaluator,
             config=self.config,
@@ -1639,7 +1610,7 @@ def _strategy_search_impl(
     inject_times: int = 1,
     llm: Model = None,
     attacker_llm: Model = None,
-    defense_func = None,
+    defense: Optional[BaseDefense] = None,
     defense_name: str = "none",
     evaluator = None,
     config: dict = None,
@@ -1660,8 +1631,8 @@ def _strategy_search_impl(
         inject_times: Number of times to inject (only 1 supported for strategy search)
         llm: Target LLM model
         attacker_llm: Attacker LLM for generating payloads (defaults to llm if not provided)
-        defense_func: Defense function to use (not used, defense is loaded from defense_name)
-        defense_name: Name of defense for adaptive mutations
+        defense: Defense object to evaluate against
+        defense_name: Name of defense for adaptive mutations if defense is not provided
         evaluator: Evaluator function for ASR (defaults to llm_judge)
         config: Configuration dict (see DEFAULT_CONFIG)
         **kwargs: Additional arguments
@@ -1708,6 +1679,7 @@ def _strategy_search_impl(
     
     # Create attacker
     attacker = StrategySearchAttacker(
+        defense=defense,
         defense_name=defense_name,
         target_llm=llm,
         attacker_llm=attacker_llm,

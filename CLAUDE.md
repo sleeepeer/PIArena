@@ -91,7 +91,7 @@ Config merging: `DEFAULT_CONFIG` (class-level) is merged with `config` dict pass
 
 ### Batch Defenses
 
-`DEFENSES_BATCH` dict in `piarena/defenses/__init__.py` provides vLLM-based batch variants of defenses, used exclusively by the `strategy_search` attack's inner optimization loop. Note: `pisanitizer` has no batch version.
+Batch support now lives on the defense classes themselves through `BaseDefense.execute_batch()` and `BaseDefense.get_response_batch()`. Defenses may override these methods for true batching or rely on the default loop-based fallback. `strategy_search` uses the defense object directly rather than a separate batch registry.
 
 ### Checkpointing & Results
 

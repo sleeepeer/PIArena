@@ -200,10 +200,10 @@ def main(args):
                 if attacker_llm is not None:
                     attack_kwargs["attacker_llm"] = attacker_llm
                 # Pass defense for defense-aware attacks
-                if args.attack in ["pair", "tap"]:
+                if args.attack in ["pair", "tap", "strategy_search"]:
                     attack_kwargs["defense"] = defense
-                elif args.attack == "strategy_search":
-                    attack_kwargs["defense_name"] = args.defense
+                if args.attack == "strategy_search":
+                    attack_kwargs["defense_name"] = defense.name
             
             injected_context = attack.execute(**attack_kwargs)
             attack_dp = copy.deepcopy(dp)
