@@ -14,12 +14,12 @@ The goal is to make the runtime lifecycle explicit:
 
 ## Relevant Files
 
-- [main_search.py](/Users/rfg5487/Desktop/code/PIArena_public/main_search.py)
-- [attack_strategy_search.py](/Users/rfg5487/Desktop/code/PIArena_public/piarena/attacks/strategy_search/attack_strategy_search.py)
-- [base.py](/Users/rfg5487/Desktop/code/PIArena_public/piarena/defenses/base.py)
-- [llm.py](/Users/rfg5487/Desktop/code/PIArena_public/piarena/llm.py)
-- Example detection defense: [defense_datasentinel.py](/Users/rfg5487/Desktop/code/PIArena_public/piarena/defenses/datasentinel/defense_datasentinel.py)
-- Example hybrid defense: [defense_promptarmor.py](/Users/rfg5487/Desktop/code/PIArena_public/piarena/defenses/promptarmor/defense_promptarmor.py)
+- [main_search.py](../main_search.py)
+- [attack_strategy_search.py](../piarena/attacks/strategy_search/attack_strategy_search.py)
+- [base.py](../piarena/defenses/base.py)
+- [llm.py](../piarena/llm.py)
+- Example detection defense: [defense_datasentinel.py](../piarena/defenses/datasentinel/defense_datasentinel.py)
+- Example hybrid defense: [defense_promptarmor.py](../piarena/defenses/promptarmor/defense_promptarmor.py)
 
 ## Big Picture
 

@@ -63,7 +63,7 @@ The `Model` class selects backend by model name string:
 - Contains `anthropic` → Anthropic SDK (config from `configs/anthropic_configs/`)
 - Everything else → HuggingFace Transformers (loaded via `AutoModelForCausalLM`)
 
-Query interface: `model.query(messages, max_new_tokens=1024, temperature=0.01)` where `messages` is a list of `{"role": str, "content": str}` dicts.
+Query interface: `model.query(messages, max_new_tokens=1024, temperature=0.01)` where `messages` is a list of `{"role": str, "content": str}` dicts. Batch interface: `model.batch_query(messages_list, ...)`.
 
 ### Evaluator Selection (in `main.py`)
 
@@ -106,12 +106,19 @@ CLI args > YAML config (`configs/experiments/`) > hardcoded defaults. YAML suppo
 ### Entry Points
 
 - `main.py` — Main evaluation pipeline (GPU required)
-- `main_search.py` — Search-based attacks: PAIR, TAP, strategy_search (needs `--backend_llm` + `--attacker_llm`)
+- `main_search.py` — Search-based attacks: PAIR, TAP, strategy_search
+  - `pair` / `tap` still use an eager attacker model object
+  - `strategy_search` accepts an attacker model path and lazily loads `attacker_llm` only if a non-vLLM fallback is needed
 - `main_injecagent.py` / `main_agentdojo.py` — Agent benchmarks
 - `scripts/run.py` — Batch runner for standard attacks
 - `scripts/run_search.py` — Batch runner for search-based attacks
 - `scripts/run_injecagent.py` / `scripts/run_agentdojo.py` — Batch runners for agent benchmarks
 - All batch scripts use `GPUScheduler` from `piarena/gpu_utils.py` for least-loaded GPU scheduling (auto-detects local vs Slurm)
+
+### Project Docs
+
+- `CHANGELOG.md` — running record of notable repository changes
+- `website/docs/` - user manuals hosted on the project page
 
 ### Data
 
