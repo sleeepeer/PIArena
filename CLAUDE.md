@@ -39,6 +39,14 @@ python main_agentdojo.py --model gpt-5-mini --attack none
 cd website && npm install && npm run dev
 ```
 
+If editable install fails in a fresh environment, upgrade the packaging toolchain first:
+
+```bash
+pip install -U pip setuptools wheel
+```
+
+The repository uses `setuptools.build_meta` in `pyproject.toml` for editable installs.
+
 ## Architecture
 
 ### Pipeline Flow

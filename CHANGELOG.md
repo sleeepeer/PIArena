@@ -12,6 +12,7 @@ This project does not currently use tagged releases consistently, so this change
 
 ### Changed
 
+- Fixed editable package installation by switching `pyproject.toml` to the standard `setuptools.build_meta` backend and adding `wheel` as a build requirement.
 - Moved batch defense support into defense classes through `BaseDefense.execute_batch()` and `BaseDefense.get_response_batch()`.
 - Added `Model.batch_query()` with provider-aware fallback behavior.
 - Removed the separate `DEFENSES_BATCH` registry from `piarena.defenses`.
@@ -24,4 +25,4 @@ This project does not currently use tagged releases consistently, so this change
 
 ### Documentation
 
-- Updated `README.md`, `AGENTS.md`, and `CLAUDE.md` to reflect the class-owned batch defense API and the simplified `strategy_search` path.
+- Updated `README.md`, `AGENTS.md`, and `CLAUDE.md` to reflect the class-owned batch defense API, the simplified `strategy_search` path, and the editable install guidance.
