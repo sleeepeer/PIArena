@@ -126,7 +126,13 @@ CLI args > YAML config (`configs/experiments/`) > hardcoded defaults. YAML suppo
 ### Project Docs
 
 - `CHANGELOG.md` — running record of notable repository changes
-- `website/docs/` - user manuals hosted on the project page
+- `docs/` - user manuals hosted on the project page and consumed by the website
+
+## Workflow Expectations
+
+- When planning implementation work, write the plan as a markdown file under `plans/`.
+- When code changes affect behavior, APIs, scripts, workflows, or the website, update the related markdown files and docs in the same change.
+- Record notable repository changes in `CHANGELOG.md` as part of the same task.
 
 ### Data
 

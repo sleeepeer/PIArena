@@ -1,12 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import METADATA from './data/metadata.json';
 import RESULTS from './data/results.json';
-import GETTING_STARTED_MD from './docs/getting-started.md?raw';
-import ATTACKS_AND_DEFENSES_MD from './docs/attacks-and-defenses.md?raw';
-import EVALUATION_MD from './docs/evaluation.md?raw';
-import STRATEGY_SEARCH_MD from './docs/strategy-search.md?raw';
-import AGENT_BENCHMARKS_MD from './docs/agent-benchmarks.md?raw';
-import YOUR_OWN_MD from './docs/your-own-attacks-defenses.md?raw';
 import {
   Github, Trophy, Shield, Terminal, Database, Layers, ArrowRight,
   AlertTriangle, CheckCircle, Crosshair, Code, BarChart, Server, Link,
@@ -23,6 +17,145 @@ const PROJECT = {
   huggingface: "https://huggingface.co/datasets/sleeepeer/PIArena",
   paper: null,
 };
+
+const DOC_FILES = import.meta.glob('../docs/**/*.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+
+const TOP_DOC_ORDER = ['getting-started', 'evaluation', 'attacks', 'defenses', 'extending'];
+const ATTACK_DOC_ORDER = ['none', 'direct', 'ignore', 'completion', 'character', 'combined', 'nanogcg', 'pair', 'tap', 'strategy-search'];
+const DEFENSE_DOC_ORDER = ['none', 'pisanitizer', 'secalign', 'datasentinel', 'attentiontracker', 'promptguard', 'promptlocate', 'promptarmor', 'datafilter', 'piguard'];
+const DOC_REDIRECTS = {
+  'attacks-and-defenses': 'attacks',
+  'strategy-search': 'attacks/strategy-search',
+  'agent-benchmarks': 'evaluation',
+  'your-own': 'extending',
+  'your-own-attacks-defenses': 'extending',
+};
+
+function humanizeSlugPart(part) {
+  return String(part || '')
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map(token => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(' ');
+}
+
+function parseDocFrontmatter(raw) {
+  const match = String(raw || '').match(/^---\n([\s\S]*?)\n---\n*/);
+  if (!match) return {};
+  const data = {};
+  match[1].split('\n').forEach(line => {
+    const m = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/);
+    if (!m) return;
+    data[m[1]] = m[2].replace(/^['"]|['"]$/g, '').trim();
+  });
+  return data;
+}
+
+function stripDocFrontmatter(raw) {
+  return String(raw || '').replace(/^---\n[\s\S]*?\n---\n*/, '');
+}
+
+function slugFromDocPath(path) {
+  const relative = String(path || '')
+    .replace(/^\.\.\/docs\//, '')
+    .replace(/\.md$/, '');
+  return relative.endsWith('/index') ? relative.slice(0, -'/index'.length) : relative;
+}
+
+function docSortIndex(slug) {
+  const top = slug.split('/')[0];
+  if (!slug.includes('/')) {
+    const index = TOP_DOC_ORDER.indexOf(slug);
+    return index === -1 ? 999 : index;
+  }
+  if (top === 'attacks') {
+    const child = slug.split('/')[1];
+    const index = child === undefined ? -1 : ATTACK_DOC_ORDER.indexOf(child);
+    return index === -1 ? 999 : index;
+  }
+  if (top === 'defenses') {
+    const child = slug.split('/')[1];
+    const index = child === undefined ? -1 : DEFENSE_DOC_ORDER.indexOf(child);
+    return index === -1 ? 999 : index;
+  }
+  return 999;
+}
+
+function compareDocs(a, b) {
+  const aParts = a.slug.split('/');
+  const bParts = b.slug.split('/');
+  if (aParts.length !== bParts.length) return aParts.length - bParts.length;
+  const aIndex = docSortIndex(a.slug);
+  const bIndex = docSortIndex(b.slug);
+  if (aIndex !== bIndex) return aIndex - bIndex;
+  return a.slug.localeCompare(b.slug);
+}
+
+function buildDocsIndex() {
+  return Object.entries(DOC_FILES)
+    .map(([path, raw]) => {
+      const frontmatter = parseDocFrontmatter(raw);
+      const slug = frontmatter.slug || slugFromDocPath(path);
+      return {
+        path,
+        slug,
+        title: frontmatter.title || humanizeSlugPart(slug.split('/').slice(-1)[0]),
+        category: frontmatter.category || (slug.includes('/') ? slug.split('/')[0] : 'guide'),
+        source: stripDocFrontmatter(raw),
+        isIndex: /\/index\.md$/.test(path),
+        depth: slug.split('/').length,
+      };
+    })
+    .sort(compareDocs);
+}
+
+const DOCS = buildDocsIndex();
+const DOCS_BY_SLUG = Object.fromEntries(DOCS.map(doc => [doc.slug, doc]));
+const DOC_ROOT_PAGES = DOCS.filter(doc => doc.depth === 1);
+const DOC_GROUPS = DOCS
+  .filter(doc => doc.isIndex && doc.depth === 1 && (doc.slug === 'attacks' || doc.slug === 'defenses'))
+  .map(group => ({
+    ...group,
+    children: DOCS.filter(doc => doc.slug.startsWith(`${group.slug}/`) && doc.depth === 2),
+  }));
+
+function resolveDocSlug(slug) {
+  const cleaned = String(slug || '')
+    .replace(/^\/+/, '')
+    .replace(/^docs\//, '')
+    .replace(/\.md$/, '')
+    .replace(/\/index$/, '');
+  const redirected = DOC_REDIRECTS[cleaned] || cleaned;
+  return DOCS_BY_SLUG[redirected] ? redirected : 'getting-started';
+}
+
+function docsHrefFromSlug(slug) {
+  return `#/docs/${resolveDocSlug(slug)}`;
+}
+
+function resolveInlineHref(href) {
+  if (!href) return { href: '#', external: false };
+  if (/^(https?:|mailto:)/i.test(href)) return { href, external: true };
+  if (href.startsWith('#/docs/')) return { href, external: false };
+  if (href.startsWith('/docs/')) return { href: `#${href}`, external: false };
+  if (href.startsWith('/')) return { href, external: false };
+
+  const normalized = href
+    .replace(/^\.\//, '')
+    .replace(/^\//, '')
+    .replace(/\.md$/, '')
+    .replace(/\/index$/, '');
+
+  if (DOCS_BY_SLUG[normalized]) {
+    return { href: docsHrefFromSlug(normalized), external: false };
+  }
+
+  return { href, external: true };
+}
 
 // ==========================================
 // 🔧 DATA PROCESSING UTILITIES
@@ -264,12 +397,13 @@ function renderInlineMarkdown(text, keyPrefix) {
         );
       }
       if (match[0].startsWith('[')) {
+        const resolved = resolveInlineHref(match[2]);
         nodes.push(
           <a
             key={`${keyPrefix}-link-${i}-${localIndex++}`}
-            href={match[2]}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={resolved.href}
+            target={resolved.external ? "_blank" : undefined}
+            rel={resolved.external ? "noopener noreferrer" : undefined}
             className="text-blue-700 hover:text-blue-800 underline underline-offset-2"
           >
             {match[1]}
@@ -290,10 +424,7 @@ function renderInlineMarkdown(text, keyPrefix) {
 
 function MarkdownDoc({ source }) {
   const blocks = useMemo(() => {
-    const cleaned = String(source || '')
-      .replace(/\r\n/g, '\n')
-      // Strip optional YAML frontmatter from docs/*.md files.
-      .replace(/^---\n[\s\S]*?\n---\n*/, '');
+    const cleaned = stripDocFrontmatter(source).replace(/\r\n/g, '\n');
     const lines = cleaned.split('\n');
     const parsed = [];
     let i = 0;
@@ -736,53 +867,95 @@ const LeaderboardPage = () => {
 // ==========================================
 
 const DOCS_SECTIONS = [
-  { id: 'getting-started', title: 'Getting Started', icon: <Terminal size={16} /> },
-  { id: 'attacks-and-defenses', title: 'Attacks & Defenses', icon: <Zap size={16} /> },
-  { id: 'evaluation', title: 'Evaluation Pipeline', icon: <Layers size={16} /> },
-  { id: 'strategy-search', title: 'Strategy Search', icon: <Crosshair size={16} /> },
-  { id: 'agent-benchmarks', title: 'Agent Benchmarks', icon: <Box size={16} /> },
-  { id: 'your-own', title: 'Build Your Own', icon: <Code size={16} /> },
-];
+  { slug: 'getting-started', icon: <Terminal size={16} /> },
+  { slug: 'evaluation', icon: <Layers size={16} /> },
+  { slug: 'attacks', icon: <Zap size={16} /> },
+  { slug: 'defenses', icon: <Shield size={16} /> },
+  { slug: 'extending', icon: <Code size={16} /> },
+].map(item => ({
+  ...item,
+  title: DOCS_BY_SLUG[item.slug]?.title || humanizeSlugPart(item.slug),
+}));
 
-const DOCS_MARKDOWN = {
-  'getting-started': GETTING_STARTED_MD,
-  'attacks-and-defenses': ATTACKS_AND_DEFENSES_MD,
-  evaluation: EVALUATION_MD,
-  'strategy-search': STRATEGY_SEARCH_MD,
-  'agent-benchmarks': AGENT_BENCHMARKS_MD,
-  'your-own': YOUR_OWN_MD,
-};
-
-const DocsContent = ({ section }) => <MarkdownDoc source={DOCS_MARKDOWN[section] || 'No documentation found.'} />;
-
-const DOCS_IDS = DOCS_SECTIONS.map(s => s.id);
+function DocsContent({ section }) {
+  const doc = DOCS_BY_SLUG[section];
+  return <MarkdownDoc source={doc?.source || '# Documentation Not Found'} />;
+}
 
 const DocsPage = () => {
   const { subPath } = parseHash();
-  const initialSec = DOCS_IDS.includes(subPath) ? subPath : 'getting-started';
+  const initialSec = resolveDocSlug(subPath);
   const [sec, setSec] = useState(initialSec);
 
   useEffect(() => {
     const onHashChange = () => {
       const { tab, subPath: sp } = parseHash();
-      if (tab === 'docs' && DOCS_IDS.includes(sp)) setSec(sp);
+      if (tab === 'docs') setSec(resolveDocSlug(sp));
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
   }, []);
+
+  const navigateDoc = (slug) => {
+    const next = resolveDocSlug(slug);
+    setSec(next);
+    window.location.hash = `/docs/${next}`;
+  };
+
+  const currentGroup = sec.includes('/') ? sec.split('/')[0] : sec;
+
   return (
     <div className="max-w-6xl mx-auto px-5 py-12">
       <div className="flex flex-col md:flex-row gap-6">
-        <div className="w-full md:w-52 flex-shrink-0">
+        <div className="w-full md:w-72 flex-shrink-0">
           <div className="md:sticky md:top-20 bg-white rounded-xl border border-zinc-200 p-3">
             <nav className="space-y-0.5">
-              {DOCS_SECTIONS.map(s => (
-                <button key={s.id} onClick={() => { setSec(s.id); window.location.hash = `#/docs/${s.id}`; }}
+              {DOCS_SECTIONS.filter(section => section.slug !== 'attacks' && section.slug !== 'defenses').map(section => (
+                <button key={section.slug} onClick={() => navigateDoc(section.slug)}
                   className={cn("w-full flex items-center gap-2.5 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors text-left",
-                    sec === s.id ? "bg-zinc-100 text-zinc-900" : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700")}>
-                  <span className={cn(sec === s.id ? "text-zinc-700" : "text-zinc-400")}>{s.icon}</span>{s.title}
+                    sec === section.slug ? "bg-zinc-100 text-zinc-900" : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700")}>
+                  <span className={cn(sec === section.slug ? "text-zinc-700" : "text-zinc-400")}>{section.icon}</span>{section.title}
                 </button>
               ))}
+              <div className="my-2 h-px bg-zinc-100" />
+              {DOC_GROUPS.map(group => {
+                const groupMeta = DOCS_SECTIONS.find(section => section.slug === group.slug);
+                const open = currentGroup === group.slug;
+                return (
+                  <div key={group.slug} className="space-y-1">
+                    <button
+                      onClick={() => navigateDoc(group.slug)}
+                      className={cn(
+                        "w-full flex items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors text-left",
+                        sec === group.slug ? "bg-zinc-100 text-zinc-900" : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+                      )}
+                    >
+                      <span className="flex items-center gap-2.5 min-w-0">
+                        <span className={cn(sec === group.slug ? "text-zinc-700" : "text-zinc-400")}>{groupMeta?.icon}</span>
+                        <span>{group.title}</span>
+                      </span>
+                      {open ? <ChevronDown size={15} className="text-zinc-400" /> : <ChevronRight size={15} className="text-zinc-400" />}
+                    </button>
+                    {open && (
+                      <div className="pl-3 space-y-0.5">
+                        {group.children.map(child => (
+                          <button
+                            key={child.slug}
+                            onClick={() => navigateDoc(child.slug)}
+                            className={cn(
+                              "w-full flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors text-left",
+                              sec === child.slug ? "bg-zinc-100 text-zinc-900" : "text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700"
+                            )}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-zinc-300 flex-shrink-0" />
+                            <span>{child.title}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </nav>
           </div>
         </div>

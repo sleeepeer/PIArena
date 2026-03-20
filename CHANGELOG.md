@@ -6,26 +6,26 @@ This project does not currently use tagged releases consistently, so this change
 
 ### Added
 
-- Added a defense batch refactor plan in [docs/defense-batch-refactor-plan.md](docs/defense-batch-refactor-plan.md).
-- Added a runtime walkthrough for `main_search.py` and `strategy_search` in [docs/main-search-strategy-search-walkthrough.md](docs/main-search-strategy-search-walkthrough.md).
-- Added this repository-level `CHANGELOG.md`.
+- Added root-level guidance in [`AGENTS.md`](AGENTS.md) and [`CLAUDE.md`](CLAUDE.md) requiring implementation plans to be written under `plans/`.
+- Added root docs trees for supported attacks and defenses under [`docs/attacks/`](docs/attacks/) and [`docs/defenses/`](docs/defenses/).
+- Added a compact public docs page at [`docs/extending.md`](docs/extending.md) covering how to add new attacks and defenses.
+- Added a docs migration and standardization plan at [`plans/docs-root-migration-and-standardization.md`](plans/docs-root-migration-and-standardization.md).
 
 ### Changed
 
-- Fixed editable package installation by switching `pyproject.toml` to the standard `setuptools.build_meta` backend and adding `wheel` as a build requirement.
-- Moved batch defense support into defense classes through `BaseDefense.execute_batch()` and `BaseDefense.get_response_batch()`.
-- Added `Model.batch_query()` with provider-aware fallback behavior.
-- Fixed HuggingFace batch generation for decoder-only models by switching to left padding and explicitly passing `pad_token_id`.
-- Fixed the default `BaseDefense` response path so batch and single-item inference both use `cleaned_context` when a defense returns one.
-- Removed the separate `DEFENSES_BATCH` registry from `piarena.defenses`.
-- Refactored `strategy_search` to evaluate candidates through the defense object rather than separate batch defense functions.
-- Simplified `main_search.py` so `strategy_search` receives the defense object directly.
-- Simplified `strategy_search` so `defense_name` is optional when a defense object is provided.
-- Simplified `strategy_search` so attacker model loading is lazy when possible:
-  - attacker vLLM is attempted from the attacker model path first
-  - a full `attacker_llm = Model(...)` is loaded only when a non-vLLM fallback is needed
-- Added single-item success revalidation in `strategy_search` so batch-only false positives do not terminate the search early.
+- Migrated the website to consume markdown directly from root [`docs/`](docs/) instead of maintaining a duplicate `website/docs/` tree.
+- Reorganized public docs into a smaller structure centered on:
+  - [`docs/getting-started.md`](docs/getting-started.md)
+  - [`docs/evaluation.md`](docs/evaluation.md)
+  - [`docs/attacks/`](docs/attacks/)
+  - [`docs/defenses/`](docs/defenses/)
+  - [`docs/extending.md`](docs/extending.md)
+- Standardized attack and defense docs so each method page focuses on a brief introduction, source links, usage, behavior, and parameters.
+- Updated the website docs sidebar in [`website/app.jsx`](website/app.jsx) to discover pages automatically from root docs and render a cleaner docs tree.
+- Updated [`website/vite.config.js`](website/vite.config.js) to allow loading markdown from the repository root during website builds.
+- Updated repository guidance in [`README.md`](README.md), [`AGENTS.md`](AGENTS.md), [`CLAUDE.md`](CLAUDE.md), and [`website/AGENTS.md`](website/AGENTS.md) to reflect the root-docs workflow.
 
-### Documentation
+### Removed
 
-- Updated `README.md`, `AGENTS.md`, and `CLAUDE.md` to reflect the class-owned batch defense API, the simplified `strategy_search` path, and the editable install guidance.
+- Removed the duplicate public docs copies from `website/docs/`.
+- Removed the older flat public docs pages that were replaced by the new grouped attack and defense trees.

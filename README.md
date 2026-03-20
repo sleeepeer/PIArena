@@ -69,7 +69,7 @@ huggingface-cli login
 
 ### 📌 Ready-to-use Tools
 
-You can simply import attacks and defenses and integrate them into your own code. Please see details in [Document](https://piarena.vercel.app/#/docs/attacks-and-defenses).
+You can simply import attacks and defenses and integrate them into your own code. Please see details in [Attack docs](https://piarena.vercel.app/#/docs/attacks) and [Defense docs](https://piarena.vercel.app/#/docs/defenses).
 
 ```python
 from piarena.attacks import get_attack
@@ -140,7 +140,7 @@ python main_search.py --dataset squad_v2 --attack strategy_search --defense pisa
 python scripts/run_search.py
 ```
 
-See [Search-based Attacks](https://piarena.vercel.app/#/docs/strategy-search) for details.
+See [Strategy Search](https://piarena.vercel.app/#/docs/attacks/strategy-search) for details.
 
 ### 🔍 Reinforcement Learning-based Attacks
 
@@ -176,7 +176,7 @@ python main_agentdojo.py --model meta-llama/Llama-3.1-8B-Instruct --attack tool_
 
 
 ## 🙋🏻‍♀️ Add your own attacks / defenses
-Please see [Document](https://piarena.vercel.app/#/docs/your-own) for full details.
+Please see [Extending PIArena](https://piarena.vercel.app/#/docs/extending) for full details.
 
 
 
