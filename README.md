@@ -57,6 +57,7 @@ cd PIArena
 conda create -n piarena python=3.10 -y
 conda activate piarena
 pip install -r requirements.txt
+pip install --upgrade setuptools pip
 pip install -e .   # Install piarena as an editable package
 ```
 
