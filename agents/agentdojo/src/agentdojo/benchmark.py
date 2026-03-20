@@ -1,4 +1,5 @@
 import json
+from json import JSONDecodeError
 import logging
 import warnings
 from collections.abc import Sequence
@@ -86,7 +87,7 @@ def run_task_with_injection_tasks(
         if logdir is not None and agent_pipeline.name is not None:
             try:
                 task_result = load_task_results(
-                    agent_pipeline.name,
+                    agent_pipeline.name.replace("/", "_"),
                     suite.name,
                     user_task.ID,
                     attack_name=attack.name,
@@ -142,6 +143,12 @@ def run_task_with_injection_tasks(
                 except ServerError as e:
                     logger.log_error(
                         f"Skipping task '{user_task.ID}' with '{injection_task.ID}' because of internal server error: {e}"
+                    )
+                    utility = False
+                    security = True
+                except JSONDecodeError as e:
+                    logger.log_error(
+                        f"Skipping task {user_task.ID} with '{injection_task.ID}' because of JSON decode error: {e}"
                     )
                     utility = False
                     security = True
@@ -253,7 +260,7 @@ def run_task_without_injection_tasks(
     if logdir is not None and agent_pipeline.name is not None:
         try:
             task_result = load_task_results(
-                agent_pipeline.name,
+                agent_pipeline.name.replace("/", "_"),
                 suite.name,
                 task.ID,
                 attack_name="none",
@@ -308,6 +315,10 @@ def run_task_without_injection_tasks(
                 raise e
         except ServerError as e:
             logger.log_error(f"Skipping task {task.ID} because of internal server error: {e}")
+            utility = False
+            security = True
+        except JSONDecodeError as e:
+            logger.log_error(f"Skipping task {task.ID} because of JSON decode error: {e}")
             utility = False
             security = True
         logger.set_contextarg("utility", utility)

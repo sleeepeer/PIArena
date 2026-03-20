@@ -57,6 +57,7 @@ cd PIArena
 conda create -n piarena python=3.10 -y
 conda activate piarena
 pip install -r requirements.txt
+pip install --upgrade setuptools pip
 pip install -e .   # Install piarena as an editable package
 ```
 
@@ -68,7 +69,7 @@ huggingface-cli login
 
 ### 📌 Ready-to-use Tools
 
-You can simply import attacks and defenses and integrate them into your own code. Please see details in [Document](https://piarena.vercel.app/#/docs/attacks-and-defenses).
+You can simply import attacks and defenses and integrate them into your own code. Please see details in [Attack docs](https://piarena.vercel.app/#/docs/attacks) and [Defense docs](https://piarena.vercel.app/#/docs/defenses).
 
 ```python
 from piarena.attacks import get_attack
@@ -76,7 +77,7 @@ from piarena.defenses import get_defense
 from piarena.llm import Model
 
 llm = Model("Qwen/Qwen3-4B-Instruct-2507")
-defense = get_defense("pisanitizer")
+defense = get_defense("promptguard")
 attack = get_attack("combined")
 ```
 
@@ -131,7 +132,7 @@ PIArena supports search-based attacks (PAIR, TAP, Strategy Search) that iterativ
 
 ```bash
 # --attack can be tap, pair, strategy_search
-python main_search.py --dataset squad_v2 --attack strategy_search --defense pisanitizer \
+python main_search.py --dataset squad_v2 --attack strategy_search --defense datafilter \
   --backend_llm Qwen/Qwen3-4B-Instruct-2507 --attacker_llm Qwen/Qwen3-4B-Instruct-2507
 
 # Run many search experiments in parallel
@@ -139,7 +140,7 @@ python main_search.py --dataset squad_v2 --attack strategy_search --defense pisa
 python scripts/run_search.py
 ```
 
-See [Search-based Attacks](https://piarena.vercel.app/#/docs/strategy-search) for details.
+See [Strategy Search](https://piarena.vercel.app/#/docs/attacks/strategy-search) for details.
 
 ### 🔍 Reinforcement Learning-based Attacks
 
@@ -147,11 +148,11 @@ Building upon PIArena (including defenses and benchmarks), this repository provi
 
 ### 🤖 Agent Benchmarks
 
-PIArena also supports agentic benchmarks: [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent) and [AgentDojo](https://github.com/ethz-spylab/agentdojo).
+PIArena also supports agentic benchmarks: [InjecAgent](https://github.com/uiuc-kang-lab/InjecAgent), [AgentDojo](https://github.com/ethz-spylab/agentdojo) and [AgentDyn](https://arxiv.org/pdf/2602.03117).
 
 #### Setup Agent Benchmarks
 ```bash
-# AgentDojo
+# AgentDojo / AgentDyn
 cd agents/agentdojo && pip install -e . && cd ../..
 ```
 
@@ -162,20 +163,34 @@ python main_injecagent.py --model meta-llama/Llama-3.1-8B-Instruct --defense non
 ```
 
 
-#### AgentDojo Evaluation
+#### AgentDojo / AgentDyn Evaluation
 
 ```bash
-# With OpenAI API
+# Original AgentDojo suite with OpenAI API
 export OPENAI_API_KEY="Your API Key Here"
-python main_agentdojo.py --model gpt-5-mini --attack none
+python main_agentdojo.py --model gpt-5-mini --attack none --suite workspace
 
-# With HuggingFace model (vLLM server started automatically)
-python main_agentdojo.py --model meta-llama/Llama-3.1-8B-Instruct --attack tool_knowledge --defense datafilter
+# Original AgentDojo suite with a PIArena defense
+python main_agentdojo.py --model meta-llama/Llama-3.1-8B-Instruct --attack tool_knowledge --defense datafilter --suite workspace
+
+# Merged AgentDyn suite with a PIArena defense
+python main_agentdojo.py --model gpt-4o-2024-08-06 --attack important_instructions --defense datafilter --suite shopping
+
+# Benchmark-native defense from the merged AgentDojo / AgentDyn tree
+python main_agentdojo.py --model gpt-4o-2024-08-06 --attack important_instructions --defense prompt_guard_2_detector --suite shopping
 ```
+
+The same `main_agentdojo.py` entrypoint is used for both benchmark families:
+
+- AgentDojo suites: `workspace`, `slack`, `travel`, `banking`
+- AgentDyn suites: `shopping`, `github`, `dailylife`
+
+PIArena integrates defenses to work in AgentDojo and AgentDyn.
+Benchmark-native defenses such as `tool_filter`, `repeat_user_prompt`, `piguard_detector`, and `prompt_guard_2_detector` are also available through the same runner.
 
 
 ## 🙋🏻‍♀️ Add your own attacks / defenses
-Please see [Document](https://piarena.vercel.app/#/docs/your-own) for full details.
+Please see [Extending PIArena](https://piarena.vercel.app/#/docs/extending) for full details.
 
 
 

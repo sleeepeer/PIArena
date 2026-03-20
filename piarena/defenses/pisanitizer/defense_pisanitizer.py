@@ -1,6 +1,7 @@
 import threading
 import torch
 import copy
+from typing import List
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from .group_peaks import group_peaks
@@ -28,22 +29,28 @@ class PISanitizerDefense(BaseDefense):
 
     def __init__(self, config=None):
         super().__init__(config)
-        print("Loading sanitization model...")
-        model_id = "sleeepeer/meta-llama-Llama-3.1-8B-Instruct-dolly_new_1200_0113-42-202602031350"
-        # model_id = "sleeepeer/meta-llama-Llama-3.1-8B-Instruct-cold_start-dolly_new_1200_0113-42-202601130038"
-        # model_id = "meta-llama/Llama-3.1-8B-Instruct"
-        self._sanitizer_model = AutoModelForCausalLM.from_pretrained(
-            model_id, dtype="auto", device_map="auto"
-        )
-        self._sanitizer_tokenizer = AutoTokenizer.from_pretrained(
-            model_id, use_fast=True, trust_remote_code=True
-        )
-        self._sanitizer_model.eval()
-        if not self._sanitizer_tokenizer.pad_token:
-            self._sanitizer_tokenizer.pad_token = self._sanitizer_tokenizer.eos_token
+        self._sanitizer_model = None
+        self._sanitizer_tokenizer = None
         self._lock = threading.Lock()
 
+    def _ensure_sanitizer(self):
+        if self._sanitizer_model is None or self._sanitizer_tokenizer is None:
+            print("Loading sanitization model...")
+            model_id = "sleeepeer/meta-llama-Llama-3.1-8B-Instruct-dolly_new_1200_0113-42-202602031350"
+            # model_id = "sleeepeer/meta-llama-Llama-3.1-8B-Instruct-cold_start-dolly_new_1200_0113-42-202601130038"
+            # model_id = "meta-llama/Llama-3.1-8B-Instruct"
+            self._sanitizer_model = AutoModelForCausalLM.from_pretrained(
+                model_id, dtype="auto", device_map="auto"
+            )
+            self._sanitizer_tokenizer = AutoTokenizer.from_pretrained(
+                model_id, use_fast=True, trust_remote_code=True
+            )
+            self._sanitizer_model.eval()
+            if not self._sanitizer_tokenizer.pad_token:
+                self._sanitizer_tokenizer.pad_token = self._sanitizer_tokenizer.eos_token
+
     def execute(self, target_inst, context):
+        self._ensure_sanitizer()
         cleaned_context = self._sanitize(
             context=context,
             smooth_win=self.config["smooth_win"],
@@ -51,6 +58,9 @@ class PISanitizerDefense(BaseDefense):
             threshold=self.config["threshold"],
         )
         return {"cleaned_context": cleaned_context}
+
+    def execute_batch(self, target_insts: List[str], contexts: List[str]) -> List[dict]:
+        return super().execute_batch(target_insts, contexts)
 
     def get_response(self, target_inst, context, llm,
                      system_prompt="You are a helpful assistant."):

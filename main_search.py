@@ -109,13 +109,13 @@ def main(args):
     print(f"Loading backend LLM: {args.backend_llm}")
     llm = Model(args.backend_llm)
     
-    # Load attacker LLM if specified (for strategy_search)
     attacker_llm = None
-    if args.attacker_llm:
+    attacker_model_name_or_path = args.attacker_llm
+    if args.attack in ["pair", "tap"] and attacker_model_name_or_path:
         print(f"Loading attacker LLM: {args.attacker_llm}")
-        attacker_llm = Model(args.attacker_llm)
-    elif args.attack in ["strategy_search", "pair", "tap"]:
-        # For iterative attacks, use backend_llm as attacker_llm if not specified
+        attacker_llm = Model(attacker_model_name_or_path)
+    elif args.attack in ["pair", "tap"]:
+        # For iterative attacks without a dedicated attacker model object, use backend_llm if needed later.
         attacker_llm = llm
     
     defense = get_defense(args.defense)
@@ -200,10 +200,10 @@ def main(args):
                 if attacker_llm is not None:
                     attack_kwargs["attacker_llm"] = attacker_llm
                 # Pass defense for defense-aware attacks
-                if args.attack in ["pair", "tap"]:
+                if args.attack in ["pair", "tap", "strategy_search"]:
                     attack_kwargs["defense"] = defense
-                elif args.attack == "strategy_search":
-                    attack_kwargs["defense_name"] = args.defense
+                if args.attack == "strategy_search":
+                    attack_kwargs["attacker_model_name_or_path"] = attacker_model_name_or_path
             
             injected_context = attack.execute(**attack_kwargs)
             attack_dp = copy.deepcopy(dp)

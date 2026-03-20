@@ -23,7 +23,8 @@ from typing import List, Dict, Tuple, Optional, Any, Union
 import numpy as np
 
 from ...llm import Model
-from ...defenses import get_defense, DEFENSES_BATCH
+from ...defenses import get_defense
+from ...defenses.base import BaseDefense
 from ..base import BaseAttack, register_attack
 from ...evaluations import llm_judge, llm_judge_batch
 from .init_strategies import (
@@ -411,9 +412,11 @@ class StrategySearchAttacker:
     
     def __init__(
         self,
-        defense_name: str,
+        defense: Optional[BaseDefense],
+        defense_name: Optional[str],
         target_llm: Model,
-        attacker_llm: Model,
+        attacker_llm: Optional[Model],
+        attacker_model_name_or_path: Optional[str] = None,
         config: StrategySearchConfig = None,
         defense_descriptions_json: str = None,
         defense_specific_init: bool = False,
@@ -421,9 +424,13 @@ class StrategySearchAttacker:
         inject_middle: bool = False,
         verbose: bool = False,
     ):
-        self.defense_name = defense_name.lower()
         self.target_llm = target_llm
         self.attacker_llm = attacker_llm
+        self.attacker_model_name_or_path = (
+            attacker_model_name_or_path
+            or getattr(attacker_llm, "model_name_or_path", None)
+            or getattr(target_llm, "model_name_or_path", None)
+        )
         self.config = config or StrategySearchConfig()
         self.defense_descriptions_json = defense_descriptions_json
         self.defense_specific_init = defense_specific_init
@@ -431,21 +438,19 @@ class StrategySearchAttacker:
         self.inject_middle = inject_middle
         self.verbose = verbose
         
-        # Instantiate defense via OOP factory
-        self.defense_instance = get_defense(self.defense_name)
-        
-        self.defense_func_batch = DEFENSES_BATCH.get(self.defense_name)
-        
-        # Print batch mode status (always print, not just when verbose)
-        defense_func_batch_name = getattr(self.defense_func_batch, '__name__', 'None') if self.defense_func_batch else 'None'
-        if self.defense_func_batch:
-            print(f"✅ Strategy Search: Batch defense enabled for '{self.defense_name}' (function: {defense_func_batch_name}, vLLM acceleration)")
+        if defense is not None:
+            self.defense = defense
+        elif defense_name is not None:
+            self.defense = get_defense(defense_name.lower())
         else:
-            print(f"⚠️ Strategy Search: No batch defense available for '{self.defense_name}', using sequential evaluation")
-        
-        # Validate attacker_llm
-        if self.attacker_llm is None:
-            raise ValueError("attacker_llm cannot be None for strategy_search. Please provide attacker_llm in main.py.")
+            raise ValueError("strategy_search requires either a defense object or defense_name.")
+        self.defense_name = self.defense.name.lower()
+        self.uses_custom_batch = (
+            self.defense.__class__.get_response_batch is not BaseDefense.get_response_batch
+            or self.defense.__class__.execute_batch is not BaseDefense.execute_batch
+        )
+        batch_mode = "custom batch implementation" if self.uses_custom_batch else "default loop-based batch fallback"
+        print(f"✅ Strategy Search: Using defense batch API for '{self.defense_name}' ({batch_mode})")
         
         # Initialize vLLM instance for attacker_llm (for batch generation acceleration)
         # Will reuse target_llm vLLM if same model
@@ -459,7 +464,7 @@ class StrategySearchAttacker:
             print(f"📝 Building initialization templates for defense '{self.defense_name}'...")
         self.init_mutation_templates = build_init_templates_for_defense(
             defense_name=self.defense_name,
-            attacker_llm=self.attacker_llm,  # Use original for template generation (may need special handling)
+            attacker_llm=self._get_attacker_template_backend(),
             descriptions_path=defense_descriptions_json,
             include_common=True,
             num_defense_specific=3 if defense_specific_init else 0,
@@ -473,16 +478,39 @@ class StrategySearchAttacker:
             print(f"   Check: 1) defense_name='{self.defense_name}' is valid, 2) attacker_llm is working")
         else:
             print(f"✅ Generated {template_count} initialization templates for '{self.defense_name}'")
+
+    def _get_attacker_model_path(self) -> Optional[str]:
+        return (
+            self.attacker_model_name_or_path
+            or getattr(self.attacker_llm, "model_name_or_path", None)
+            or getattr(self.target_llm, "model_name_or_path", None)
+        )
+
+    def _ensure_attacker_llm(self) -> Model:
+        if self.attacker_llm is None:
+            model_name_or_path = self._get_attacker_model_path()
+            if model_name_or_path is None:
+                raise ValueError("Cannot lazy-load attacker_llm because no attacker model path is available.")
+            print(f"⏳ Loading attacker LLM on demand: {model_name_or_path}")
+            self.attacker_llm = Model(model_name_or_path)
+        return self.attacker_llm
+
+    def _get_attacker_template_backend(self):
+        return self.attacker_vllm if self.attacker_vllm is not None else self._ensure_attacker_llm()
+
+    def _get_judge_fallback_llm(self):
+        default_judge_model = "Qwen/Qwen3-4B-Instruct-2507"
+        if self._get_attacker_model_path() == default_judge_model:
+            return self._ensure_attacker_llm()
+        return None
     
     def _init_attacker_vllm(self) -> Optional[AttackerVLLMModel]:
         """Initialize vLLM instance for attacker LLM (creates shared instance if same as target_llm)"""
         global ATTACKER_VLLM_MODEL
         
         # Get model paths
-        attacker_model_path = None
         target_model_path = None
-        if hasattr(self.attacker_llm, 'model_name_or_path'):
-            attacker_model_path = self.attacker_llm.model_name_or_path
+        attacker_model_path = self._get_attacker_model_path()
         if hasattr(self.target_llm, 'model_name_or_path'):
             target_model_path = self.target_llm.model_name_or_path
         
@@ -563,10 +591,8 @@ class StrategySearchAttacker:
         DEFAULT_JUDGE_MODEL = "Qwen/Qwen3-4B-Instruct-2507"
         
         # Get model paths
-        attacker_model_path = None
         target_model_path = None
-        if hasattr(self.attacker_llm, 'model_name_or_path'):
-            attacker_model_path = self.attacker_llm.model_name_or_path
+        attacker_model_path = self._get_attacker_model_path()
         if hasattr(self.target_llm, 'model_name_or_path'):
             target_model_path = self.target_llm.model_name_or_path
         
@@ -766,6 +792,7 @@ class StrategySearchAttacker:
         
         # Fallback to original attacker_llm
         try:
+            attacker_llm = self._ensure_attacker_llm()
             gen_kwargs = {
                 "messages": messages,
                 "max_new_tokens": self.config.max_tokens,
@@ -777,7 +804,7 @@ class StrategySearchAttacker:
             if self.config.top_p < 1.0:
                 gen_kwargs["top_p"] = self.config.top_p
             
-            response = self.attacker_llm.query(**gen_kwargs)
+            response = attacker_llm.query(**gen_kwargs)
             cleaned = self._clean_output(response)
             if not cleaned.strip():
                 # Always print if response is empty (critical)
@@ -840,7 +867,8 @@ class StrategySearchAttacker:
                 # Fall through to original attacker_llm
         
         # Fallback to original attacker_llm (sequential or batch if supported)
-        has_batch = hasattr(self.attacker_llm, 'batch_query')
+        attacker_llm = self._ensure_attacker_llm()
+        has_batch = hasattr(attacker_llm, 'batch_query')
         
         gen_kwargs = {
             "max_new_tokens": self.config.max_tokens,
@@ -853,9 +881,9 @@ class StrategySearchAttacker:
         
         try:
             if has_batch:
-                responses = self.attacker_llm.batch_query(messages_list, **gen_kwargs)
+                responses = attacker_llm.batch_query(messages_list, **gen_kwargs)
             else:
-                responses = [self.attacker_llm.query(messages=m, **gen_kwargs) for m in messages_list]
+                responses = [attacker_llm.query(messages=m, **gen_kwargs) for m in messages_list]
             
             cleaned_responses = [self._clean_output(r) for r in responses]
             
@@ -897,6 +925,71 @@ class StrategySearchAttacker:
         
         # If not found exactly, assume sanitized
         return True
+
+    def _apply_defense_result(
+        self,
+        candidate: AttackCandidate,
+        defense_result: dict,
+        attack_prompt: str,
+    ) -> str:
+        """Update candidate state from a defense response and return the model response."""
+        response = defense_result["response"]
+        candidate.full_response = response
+
+        cleaned_context = defense_result.get("cleaned_context", attack_prompt)
+        candidate.sanitized_prompt = cleaned_context
+
+        defense_type = self._get_defense_type()
+        if defense_type == "sanitization":
+            candidate.was_sanitized = self._check_sanitization(
+                candidate.injected_prompt, cleaned_context
+            )
+        elif defense_type == "detection":
+            candidate.was_detected, detection_signal = self._check_detection(response)
+            candidate.sanitized_prompt = detection_signal
+
+        return response
+
+    def _set_defense_feedback(self, candidate: AttackCandidate, fitness: float) -> None:
+        defense_type = self._get_defense_type()
+        if fitness >= self.config.success_threshold:
+            candidate.defense_feedback = "success"
+        elif defense_type == "no_defense":
+            candidate.defense_feedback = "no_defense"
+        elif defense_type == "sanitization":
+            candidate.defense_feedback = "sanitized" if candidate.was_sanitized else "too_weak"
+        elif defense_type == "detection":
+            candidate.defense_feedback = "detected" if candidate.was_detected else "too_weak"
+        else:
+            candidate.defense_feedback = "no_signal"
+
+    def _confirm_candidate_with_main_path(
+        self,
+        candidate: AttackCandidate,
+        case: dict,
+        evaluator,
+    ) -> float:
+        """
+        Re-evaluate a candidate through the same single-item path used in main_search.py.
+
+        This avoids false positives from batched target/judge inference drift.
+        """
+        attack_prompt = self._find_injection_position(case["context"], candidate.injected_prompt)
+        defense_result = self.defense.get_response(
+            target_inst=case["target_inst"],
+            context=attack_prompt,
+            llm=self.target_llm,
+        )
+        response = self._apply_defense_result(candidate, defense_result, attack_prompt)
+        fitness = float(
+            evaluator(
+                response=response,
+                ground_truth=case["injected_task_answer"],
+                task_prompt=case["injected_task"],
+            )
+        )
+        self._set_defense_feedback(candidate, fitness)
+        return fitness
     
     def _evaluate_candidate(
         self,
@@ -926,29 +1019,12 @@ class StrategySearchAttacker:
         
         try:
             # Execute defense
-            defense_result = self.defense_instance.get_response(
+            defense_result = self.defense.get_response(
                 target_inst=case['target_inst'],
                 context=attack_prompt,
                 llm=self.target_llm,
             )
-            
-            response = defense_result["response"]
-            candidate.full_response = response
-            
-            # Get cleaned context if available
-            cleaned_context = defense_result.get("cleaned_context", attack_prompt)
-            candidate.sanitized_prompt = cleaned_context
-            
-            # Analyze defense feedback
-            defense_type = self._get_defense_type()
-            
-            if defense_type == "sanitization":
-                candidate.was_sanitized = self._check_sanitization(
-                    candidate.injected_prompt, cleaned_context
-                )
-            elif defense_type == "detection":
-                candidate.was_detected, detection_signal = self._check_detection(response)
-                candidate.sanitized_prompt = detection_signal
+            response = self._apply_defense_result(candidate, defense_result, attack_prompt)
             
             # Evaluate ASR - use judge_vllm if available, otherwise use appropriate llm
             if evaluator.__name__ == 'llm_judge':
@@ -969,8 +1045,8 @@ class StrategySearchAttacker:
                     if self.verbose:
                         print(f"    [Judge: vLLM] Response: {judge_response[:50]}... -> fitness={fitness}")
                 else:
-                    # Fallback: use attacker_llm if same as judge model, otherwise use default judge_llm
-                    eval_llm = self.attacker_llm if evaluator.__name__ == 'llm_judge' else self.target_llm
+                    # Fallback: reuse attacker_llm only when it matches the judge model, otherwise let llm_judge load its default judge.
+                    eval_llm = self._get_judge_fallback_llm()
                     fitness = evaluator(
                         response=response,
                         ground_truth=case['injected_task_answer'],
@@ -978,7 +1054,7 @@ class StrategySearchAttacker:
                         llm=eval_llm,
                     )
                     if self.verbose:
-                        judge_type = "attacker_llm" if eval_llm == self.attacker_llm else "default_judge_llm"
+                        judge_type = "attacker_llm" if eval_llm is not None else "default_judge_llm"
                         print(f"    [Judge: {judge_type}] fitness={fitness}")
             else:
                 eval_llm = self.target_llm
@@ -989,18 +1065,7 @@ class StrategySearchAttacker:
                     llm=eval_llm,
                 )
             fitness = float(fitness)
-            
-            # Determine defense feedback type
-            if fitness >= self.config.success_threshold:
-                candidate.defense_feedback = "success"
-            elif defense_type == "no_defense":
-                candidate.defense_feedback = "no_defense"
-            elif defense_type == "sanitization":
-                candidate.defense_feedback = "sanitized" if candidate.was_sanitized else "too_weak"
-            elif defense_type == "detection":
-                candidate.defense_feedback = "detected" if candidate.was_detected else "too_weak"
-            else:
-                candidate.defense_feedback = "no_signal"
+            self._set_defense_feedback(candidate, fitness)
             
             return fitness
             
@@ -1017,7 +1082,7 @@ class StrategySearchAttacker:
         generation: int = 0,
     ) -> List[float]:
         """
-        Batch evaluate candidates (only when defense supports batch processing).
+        Batch evaluate candidates through the defense object API.
         
         Args:
             candidates: List of attack candidates
@@ -1028,22 +1093,6 @@ class StrategySearchAttacker:
         Returns:
             List of fitness scores
         """
-        if not self.defense_func_batch:
-            # No batch support, fall back to sequential with early stop
-            if self.verbose:
-                print(f"  ⚠️ No batch defense available, using sequential evaluation ({len(candidates)} candidates)")
-            fitnesses = []
-            for i, c in enumerate(candidates):
-                fitness = self._evaluate_candidate(c, case, evaluator, i, generation)
-                fitnesses.append(fitness)
-                # Early stop on success
-                if fitness >= self.config.success_threshold:
-                    if self.verbose:
-                        print(f"  ✅ Found success (fitness={fitness:.2f}), stopping early (skipped {len(candidates) - i - 1})")
-                    fitnesses.extend([0.0] * (len(candidates) - i - 1))
-                    break
-            return fitnesses
-        
         context = case['context']
         
         # Build batch inputs
@@ -1051,52 +1100,25 @@ class StrategySearchAttacker:
         attack_prompts = [self._find_injection_position(context, c.injected_prompt) for c in candidates]
         
         try:
-            # Batch execute defense (uses vLLM for acceleration)
+            # Batch execute defense through the class-owned batch API.
             if self.verbose:
-                print(f"  ⚡ Executing batch defense with vLLM: {len(candidates)} candidates")
-            # Pass attacker_vllm_model to defense_batch to reuse vLLM instance if same model
-            defense_kwargs = {"llm": self.target_llm}
-            if self.attacker_vllm is not None:
-                # Check if attacker_vllm and target_llm are same model
-                # Use attacker_vllm.model_name_or_path (vLLM instance) instead of attacker_llm
-                attacker_model_path = getattr(self.attacker_vllm, 'model_name_or_path', None) if self.attacker_vllm else None
-                target_model_path = getattr(self.target_llm, 'model_name_or_path', None) if self.target_llm else None
-                if attacker_model_path and target_model_path and attacker_model_path == target_model_path:
-                    # Pass attacker_vllm_model to defense_batch for reuse (supported by none, promptarmor, etc.)
-                    defense_kwargs["attacker_vllm_model"] = self.attacker_vllm
-            
-            # Debug: print which defense batch function is being called
-            defense_func_name = getattr(self.defense_func_batch, '__name__', str(self.defense_func_batch))
-            print(f"🔍 Calling defense_batch function: {defense_func_name} for defense_name='{self.defense_name}'")
-            
-            defense_results = self.defense_func_batch(
-                target_insts,
-                attack_prompts,
-                **defense_kwargs
+                print(f"  ⚡ Executing defense.get_response_batch for {len(candidates)} candidates")
+
+            defense_results = self.defense.get_response_batch(
+                target_insts=target_insts,
+                contexts=attack_prompts,
+                llm=self.target_llm,
             )
             
             if self.verbose:
                 print(f"  ✅ Batch defense complete: {len(candidates)} candidates")
             
             # Process results
-            defense_type = self._get_defense_type()
             responses = []
             
             for i, (candidate, result) in enumerate(zip(candidates, defense_results)):
-                response = result["response"]
-                candidate.full_response = response
+                response = self._apply_defense_result(candidate, result, attack_prompts[i])
                 responses.append(response)
-                
-                cleaned_context = result.get("cleaned_context", attack_prompts[i])
-                candidate.sanitized_prompt = cleaned_context
-                
-                if defense_type == "sanitization":
-                    candidate.was_sanitized = self._check_sanitization(
-                        candidate.injected_prompt, cleaned_context
-                    )
-                elif defense_type == "detection":
-                    candidate.was_detected, detection_signal = self._check_detection(response)
-                    candidate.sanitized_prompt = detection_signal
             
             # Batch evaluate ASR with early stop
             if evaluator.__name__ == 'llm_judge':
@@ -1122,7 +1144,7 @@ class StrategySearchAttacker:
                         responses=responses,
                         ground_truths=[case['injected_task_answer']] * len(responses),
                         task_prompts=case['injected_task'],
-                        llm=self.attacker_llm,  # Will use default judge_llm if attacker_llm is not judge model
+                        llm=self._get_judge_fallback_llm(),
                     )
                 fitnesses = []
                 for i, f in enumerate(fitnesses_raw):
@@ -1151,16 +1173,7 @@ class StrategySearchAttacker:
             
             # Update defense feedback
             for candidate, fitness in zip(candidates, fitnesses):
-                if fitness >= self.config.success_threshold:
-                    candidate.defense_feedback = "success"
-                elif defense_type == "no_defense":
-                    candidate.defense_feedback = "no_defense"
-                elif defense_type == "sanitization":
-                    candidate.defense_feedback = "sanitized" if candidate.was_sanitized else "too_weak"
-                elif defense_type == "detection":
-                    candidate.defense_feedback = "detected" if candidate.was_detected else "too_weak"
-                else:
-                    candidate.defense_feedback = "no_signal"
+                self._set_defense_feedback(candidate, fitness)
             
             return fitnesses
             
@@ -1345,7 +1358,7 @@ class StrategySearchAttacker:
         n_strategies = self.config.population_size
         
         # Check if batch mode is available
-        use_batch = self.defense_func_batch is not None
+        use_batch = True
         
         if self.verbose:
             print(f"\n{'='*60}")
@@ -1430,15 +1443,26 @@ class StrategySearchAttacker:
         # Update fitness and check results
         for i, (candidate, fitness) in enumerate(zip(all_candidates, fitnesses)):
             candidate.fitness = fitness
-            
-            if best_ever is None or fitness > best_ever.fitness:
+            confirmed_success = False
+            if fitness >= self.config.success_threshold:
+                confirmed_fitness = self._confirm_candidate_with_main_path(candidate, case, evaluator)
+                candidate.fitness = confirmed_fitness
+                if confirmed_fitness >= self.config.success_threshold:
+                    confirmed_success = True
+                else:
+                    print(
+                        f"  ⚠️ Phase 1 candidate '{candidate.mutation_type}' scored {fitness:.2f} in batch "
+                        f"but only {confirmed_fitness:.2f} on single-item recheck"
+                    )
+
+            if best_ever is None or candidate.fitness > best_ever.fitness:
                 best_ever = candidate
                 if self.verbose:
-                    print(f"  🎯 New best! {candidate.mutation_type}, fitness={fitness:.2f}")
-            
-            if fitness >= self.config.success_threshold and not attack_success:
+                    print(f"  🎯 New best! {candidate.mutation_type}, fitness={candidate.fitness:.2f}")
+
+            if confirmed_success and not attack_success:
                 attack_success = True
-                print(f"  🎉 Phase 1 Success! Best candidate: {candidate.mutation_type}, fitness={fitness:.2f}")
+                print(f"  🎉 Phase 1 Success! Best candidate: {candidate.mutation_type}, fitness={candidate.fitness:.2f}")
                 break
         
         # Print Phase 1 summary (always print, not just when verbose)
@@ -1536,12 +1560,25 @@ class StrategySearchAttacker:
                 # Ensure best_ever is initialized
                 if best_ever is None:
                     best_ever = candidate
-                elif candidate.fitness > best_ever.fitness:
+
+                confirmed_success = False
+                if candidate.fitness >= self.config.success_threshold:
+                    confirmed_fitness = self._confirm_candidate_with_main_path(candidate, case, evaluator)
+                    candidate.fitness = confirmed_fitness
+                    if confirmed_fitness >= self.config.success_threshold:
+                        confirmed_success = True
+                    else:
+                        print(
+                            f"  ⚠️ Generation {generation + 1} candidate '{candidate.mutation_type}' scored "
+                            f"high in batch but only {confirmed_fitness:.2f} on single-item recheck"
+                        )
+
+                if candidate.fitness > best_ever.fitness:
                     best_ever = candidate
                     if self.verbose:
                         print(f"  🎯 New best! Line {i+1}, fitness={best_ever.fitness:.2f}")
                 
-                if candidate.fitness >= self.config.success_threshold:
+                if confirmed_success:
                     any_success = True
                     print(f"  🎉 Generation {generation + 1}: Attack success! Fitness={candidate.fitness:.2f}")
                     break
@@ -1591,7 +1628,7 @@ class StrategySearchAttack(BaseAttack):
     """Evolutionary strategy search attack optimizer.
 
     Wraps the StrategySearchAttacker for use with the BaseAttack interface.
-    Requires `llm`, `attacker_llm`, and `defense_name` kwargs at execute() time.
+    Requires `llm` and a `defense` object. `attacker_llm` is optional and may be loaded lazily.
     """
 
     name = "strategy_search"
@@ -1606,7 +1643,9 @@ class StrategySearchAttack(BaseAttack):
         injected_task_answer="",
         llm=None,
         attacker_llm=None,
-        defense_name="none",
+        attacker_model_name_or_path=None,
+        defense=None,
+        defense_name=None,
         evaluator=None,
         inject_position="end",
         inject_times=1,
@@ -1622,6 +1661,8 @@ class StrategySearchAttack(BaseAttack):
             inject_times=inject_times,
             llm=llm,
             attacker_llm=attacker_llm,
+            attacker_model_name_or_path=attacker_model_name_or_path,
+            defense=defense,
             defense_name=defense_name,
             evaluator=evaluator,
             config=self.config,
@@ -1639,8 +1680,9 @@ def _strategy_search_impl(
     inject_times: int = 1,
     llm: Model = None,
     attacker_llm: Model = None,
-    defense_func = None,
-    defense_name: str = "none",
+    attacker_model_name_or_path: Optional[str] = None,
+    defense: Optional[BaseDefense] = None,
+    defense_name: Optional[str] = None,
     evaluator = None,
     config: dict = None,
     **kwargs
@@ -1659,9 +1701,10 @@ def _strategy_search_impl(
         inject_position: Where to inject ("end", "middle")
         inject_times: Number of times to inject (only 1 supported for strategy search)
         llm: Target LLM model
-        attacker_llm: Attacker LLM for generating payloads (defaults to llm if not provided)
-        defense_func: Defense function to use (not used, defense is loaded from defense_name)
-        defense_name: Name of defense for adaptive mutations
+        attacker_llm: Optional preloaded attacker LLM for generating payloads
+        attacker_model_name_or_path: Model path used to initialize attacker backends lazily
+        defense: Defense object to evaluate against
+        defense_name: Optional defense name if defense object is not provided
         evaluator: Evaluator function for ASR (defaults to llm_judge)
         config: Configuration dict (see DEFAULT_CONFIG)
         **kwargs: Additional arguments
@@ -1678,23 +1721,24 @@ def _strategy_search_impl(
     if llm is None:
         raise ValueError("strategy_search requires 'llm' parameter. Please provide backend_llm in main.py.")
     
-    # Use target LLM as attacker if not specified
-    if attacker_llm is None:
-        attacker_llm = llm
-        print(f"Using backend_llm as attacker_llm (no separate attacker_llm provided)")
-    
-    # Test attacker_llm can be queried (basic sanity check)
-    try:
-        test_response = attacker_llm.query(
-            messages=[{"role": "user", "content": "Say 'test'"}],
-            max_new_tokens=10,
-            temperature=0.0,
-        )
-        if not test_response or not test_response.strip():
-            print(f"WARNING: attacker_llm test query returned empty response. This may cause issues.")
-    except Exception as e:
-        print(f"WARNING: attacker_llm test query failed: {e}")
-        print(f"This may cause strategy_search to fail. Check if attacker_llm is properly initialized.")
+    if attacker_llm is None and attacker_model_name_or_path is None:
+        attacker_model_name_or_path = getattr(llm, "model_name_or_path", None)
+        if attacker_model_name_or_path is not None:
+            print("Using backend_llm model path for lazy attacker backend initialization")
+
+    # Test attacker_llm only if it was already loaded before entering strategy_search.
+    if attacker_llm is not None:
+        try:
+            test_response = attacker_llm.query(
+                messages=[{"role": "user", "content": "Say 'test'"}],
+                max_new_tokens=10,
+                temperature=0.0,
+            )
+            if not test_response or not test_response.strip():
+                print(f"WARNING: attacker_llm test query returned empty response. This may cause issues.")
+        except Exception as e:
+            print(f"WARNING: attacker_llm test query failed: {e}")
+            print(f"This may cause strategy_search to fail. Check if attacker_llm is properly initialized.")
     
     # Default evaluator (llm_judge)
     if evaluator is None:
@@ -1708,9 +1752,11 @@ def _strategy_search_impl(
     
     # Create attacker
     attacker = StrategySearchAttacker(
+        defense=defense,
         defense_name=defense_name,
         target_llm=llm,
         attacker_llm=attacker_llm,
+        attacker_model_name_or_path=attacker_model_name_or_path,
         config=search_config,
         defense_descriptions_json=final_config.get("defense_descriptions_json"),
         defense_specific_init=final_config.get("defense_specific_init", False),

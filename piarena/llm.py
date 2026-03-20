@@ -130,6 +130,33 @@ class Model():
                         raise e
             if not self.tokenizer.pad_token:
                 self.tokenizer.pad_token = self.tokenizer.eos_token     
+            if not getattr(self.model.config, "is_encoder_decoder", False):
+                self.tokenizer.padding_side = "left"
+
+    def _normalize_messages(self, messages: Union[str, List[Dict[str, str]]]) -> List[Dict[str, str]]:
+        if isinstance(messages, str):
+            return [
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": messages}
+            ]
+        return messages
+
+    def _format_messages_for_generation(self, messages: Union[str, List[Dict[str, str]]]) -> str:
+        normalized_messages = self._normalize_messages(messages)
+        try:
+            return self.tokenizer.apply_chat_template(
+                normalized_messages,
+                tokenize=False,
+                add_generation_prompt=True,
+            )
+        except Exception:
+            prompt = ""
+            for message in normalized_messages:
+                role = message.get("role", "user").capitalize()
+                content = message.get("content", "")
+                prompt += f"{role}: {content}\n\n"
+            prompt += "Assistant: "
+            return prompt
 
 
     def query(
@@ -150,11 +177,7 @@ class Model():
         elif "anthropic" in self.model_name_or_path.lower():
             generated_text = self.model.query(messages)
         else: # HF models
-            if isinstance(messages, str):
-                messages = [
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": messages}
-                ]
+            messages = self._normalize_messages(messages)
             input_ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(self.model.device)
             attention_mask = torch.ones_like(input_ids).to(self.model.device)
             inputs = {
@@ -168,7 +191,54 @@ class Model():
                 temperature=temperature,
                 do_sample=do_sample,
                 top_p=top_p,
-                repetition_penalty=1.2
+                repetition_penalty=1.2,
+                pad_token_id=self.tokenizer.pad_token_id,
             )
             generated_text = self.tokenizer.decode(outputs[0][len(inputs["input_ids"][0]):], skip_special_tokens=True)
         return generated_text
+
+    def batch_query(
+        self,
+        messages_list: List[Union[str, List[Dict[str, str]]]],
+        max_new_tokens: int = 1024,
+        temperature: float = 0.01,
+        do_sample: bool = False,
+        top_p: float = 0.95,
+    ) -> List[str]:
+        if not messages_list:
+            return []
+
+        if any(provider in self.model_name_or_path.lower() for provider in ["azure", "google", "anthropic"]):
+            return [
+                self.query(
+                    messages=messages,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    do_sample=do_sample,
+                    top_p=top_p,
+                )
+                for messages in messages_list
+            ]
+
+        prompts = [self._format_messages_for_generation(messages) for messages in messages_list]
+        tokenized = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+        ).to(self.model.device)
+
+        outputs = self.model.generate(
+            **tokenized,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            do_sample=do_sample,
+            top_p=top_p,
+            repetition_penalty=1.2,
+            pad_token_id=self.tokenizer.pad_token_id,
+        )
+
+        input_lengths = tokenized["attention_mask"].sum(dim=1).tolist()
+        return [
+            self.tokenizer.decode(output[input_length:], skip_special_tokens=True)
+            for output, input_length in zip(outputs, input_lengths)
+        ]

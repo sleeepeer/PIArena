@@ -44,6 +44,8 @@ TOOL_FILTER_PROMPT = (
 DEFENSES = [
     "tool_filter",
     "transformers_pi_detector",
+    "piguard_detector",
+    "prompt_guard_2_detector",
     "spotlighting_with_delimiting",
     "repeat_user_prompt",
     "piarena",
@@ -86,6 +88,18 @@ def get_llm(provider: str, model: str, model_id: str | None, tool_delimiter: str
                 model = azure_deployment
         else:
             client = openai.OpenAI()
+        llm = OpenAILLM(client, model)
+    elif provider == "openrouter":
+        client = openai.OpenAI(
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+            base_url="https://openrouter.ai/api/v1",
+        )
+        llm = OpenAILLM(client, model)
+    elif provider == "mulerouter":
+        client = openai.OpenAI(
+            api_key=os.getenv("MULEROUTER_API_KEY"),
+            base_url="https://api.mulerouter.ai/vendors/openai/v1",
+        )
         llm = OpenAILLM(client, model)
     elif provider == "anthropic":
         client = anthropic.Anthropic()
@@ -237,13 +251,22 @@ class AgentPipeline(BasePipelineElement):
             )
             pipeline.name = f"{llm_name}-{config.defense}"
             return pipeline
-        if config.defense == "transformers_pi_detector":
+        if config.defense in {"transformers_pi_detector", "piguard_detector", "prompt_guard_2_detector"}:
+            if config.defense == "transformers_pi_detector":
+                model_name = "protectai/deberta-v3-base-prompt-injection-v2"
+                safe_label = "SAFE"
+            elif config.defense == "piguard_detector":
+                model_name = "leolee99/PIGuard"
+                safe_label = "benign"
+            else:
+                model_name = "meta-llama/Llama-Prompt-Guard-2-86M"
+                safe_label = "LABEL_0"
             tools_loop = ToolsExecutionLoop(
                 [
                     ToolsExecutor(tool_output_formatter),
                     TransformersBasedPIDetector(
-                        model_name="protectai/deberta-v3-base-prompt-injection-v2",
-                        safe_label="SAFE",
+                        model_name=model_name,
+                        safe_label=safe_label,
                         threshold=0.5,
                         mode="message",
                     ),

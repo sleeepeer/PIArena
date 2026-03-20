@@ -33,11 +33,20 @@ python scripts/run_search.py    # Search-based attacks
 git submodule update --init --recursive
 cd agents/agentdojo && pip install -e . && cd ../..
 python main_injecagent.py --model meta-llama/Llama-3.1-8B-Instruct --defense none
-python main_agentdojo.py --model gpt-5-mini --attack none
+python main_agentdojo.py --model gpt-5-mini --attack none --suite workspace
+python main_agentdojo.py --model gpt-4o-2024-08-06 --attack important_instructions --defense datafilter --suite shopping
 
 # Website (React 18 + Vite)
 cd website && npm install && npm run dev
 ```
+
+If editable install fails in a fresh environment, upgrade the packaging toolchain first:
+
+```bash
+pip install -U pip setuptools wheel
+```
+
+The repository uses `setuptools.build_meta` in `pyproject.toml` for editable installs.
 
 ## Architecture
 
@@ -63,7 +72,7 @@ The `Model` class selects backend by model name string:
 - Contains `anthropic` → Anthropic SDK (config from `configs/anthropic_configs/`)
 - Everything else → HuggingFace Transformers (loaded via `AutoModelForCausalLM`)
 
-Query interface: `model.query(messages, max_new_tokens=1024, temperature=0.01)` where `messages` is a list of `{"role": str, "content": str}` dicts.
+Query interface: `model.query(messages, max_new_tokens=1024, temperature=0.01)` where `messages` is a list of `{"role": str, "content": str}` dicts. Batch interface: `model.batch_query(messages_list, ...)`.
 
 ### Evaluator Selection (in `main.py`)
 
@@ -91,7 +100,7 @@ Config merging: `DEFAULT_CONFIG` (class-level) is merged with `config` dict pass
 
 ### Batch Defenses
 
-`DEFENSES_BATCH` dict in `piarena/defenses/__init__.py` provides vLLM-based batch variants of defenses, used exclusively by the `strategy_search` attack's inner optimization loop. Note: `pisanitizer` has no batch version.
+Batch support now lives on the defense classes themselves through `BaseDefense.execute_batch()` and `BaseDefense.get_response_batch()`. Defenses may override these methods for true batching or rely on the default loop-based fallback. `strategy_search` uses the defense object directly rather than a separate batch registry.
 
 ### Checkpointing & Results
 
@@ -106,12 +115,26 @@ CLI args > YAML config (`configs/experiments/`) > hardcoded defaults. YAML suppo
 ### Entry Points
 
 - `main.py` — Main evaluation pipeline (GPU required)
-- `main_search.py` — Search-based attacks: PAIR, TAP, strategy_search (needs `--backend_llm` + `--attacker_llm`)
+- `main_search.py` — Search-based attacks: PAIR, TAP, strategy_search
+  - `pair` / `tap` still use an eager attacker model object
+  - `strategy_search` accepts an attacker model path and lazily loads `attacker_llm` only if a non-vLLM fallback is needed
 - `main_injecagent.py` / `main_agentdojo.py` — Agent benchmarks
+  - `main_agentdojo.py` now covers both classic AgentDojo suites and merged AgentDyn suites in the vendored `agents/agentdojo` tree
 - `scripts/run.py` — Batch runner for standard attacks
 - `scripts/run_search.py` — Batch runner for search-based attacks
 - `scripts/run_injecagent.py` / `scripts/run_agentdojo.py` — Batch runners for agent benchmarks
 - All batch scripts use `GPUScheduler` from `piarena/gpu_utils.py` for least-loaded GPU scheduling (auto-detects local vs Slurm)
+
+### Project Docs
+
+- `CHANGELOG.md` — running record of notable repository changes
+- `docs/` - user manuals hosted on the project page and consumed by the website
+
+## Workflow Expectations
+
+- When planning implementation work, write the plan as a markdown file under `plans/`.
+- When code changes affect behavior, APIs, scripts, workflows, or the website, update the related markdown files and docs in the same change.
+- Record notable repository changes in `CHANGELOG.md` as part of the same task.
 
 ### Data
 
