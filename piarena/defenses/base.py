@@ -45,7 +45,8 @@ class BaseDefense(ABC):
         if llm is None:
             response = "[PIArena] No LLM provided, response is not available."
         else:
-            messages = self._build_messages(target_inst, context, system_prompt)
+            effective_context = result.get("cleaned_context", context)
+            messages = self._build_messages(target_inst, effective_context, system_prompt)
             response = llm.query(messages)
         return {**result, "response": response}
 
@@ -62,8 +63,12 @@ class BaseDefense(ABC):
             ]
 
         messages_batch = [
-            self._build_messages(target_inst, context, system_prompt)
-            for target_inst, context in zip(target_insts, contexts)
+            self._build_messages(
+                target_inst,
+                result.get("cleaned_context", context),
+                system_prompt,
+            )
+            for target_inst, context, result in zip(target_insts, contexts, defense_results)
         ]
         responses = llm.batch_query(messages_batch)
         return [

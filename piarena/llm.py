@@ -130,6 +130,8 @@ class Model():
                         raise e
             if not self.tokenizer.pad_token:
                 self.tokenizer.pad_token = self.tokenizer.eos_token     
+            if not getattr(self.model.config, "is_encoder_decoder", False):
+                self.tokenizer.padding_side = "left"
 
     def _normalize_messages(self, messages: Union[str, List[Dict[str, str]]]) -> List[Dict[str, str]]:
         if isinstance(messages, str):
@@ -189,7 +191,8 @@ class Model():
                 temperature=temperature,
                 do_sample=do_sample,
                 top_p=top_p,
-                repetition_penalty=1.2
+                repetition_penalty=1.2,
+                pad_token_id=self.tokenizer.pad_token_id,
             )
             generated_text = self.tokenizer.decode(outputs[0][len(inputs["input_ids"][0]):], skip_special_tokens=True)
         return generated_text
@@ -231,6 +234,7 @@ class Model():
             do_sample=do_sample,
             top_p=top_p,
             repetition_penalty=1.2,
+            pad_token_id=self.tokenizer.pad_token_id,
         )
 
         input_lengths = tokenized["attention_mask"].sum(dim=1).tolist()

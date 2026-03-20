@@ -925,6 +925,71 @@ class StrategySearchAttacker:
         
         # If not found exactly, assume sanitized
         return True
+
+    def _apply_defense_result(
+        self,
+        candidate: AttackCandidate,
+        defense_result: dict,
+        attack_prompt: str,
+    ) -> str:
+        """Update candidate state from a defense response and return the model response."""
+        response = defense_result["response"]
+        candidate.full_response = response
+
+        cleaned_context = defense_result.get("cleaned_context", attack_prompt)
+        candidate.sanitized_prompt = cleaned_context
+
+        defense_type = self._get_defense_type()
+        if defense_type == "sanitization":
+            candidate.was_sanitized = self._check_sanitization(
+                candidate.injected_prompt, cleaned_context
+            )
+        elif defense_type == "detection":
+            candidate.was_detected, detection_signal = self._check_detection(response)
+            candidate.sanitized_prompt = detection_signal
+
+        return response
+
+    def _set_defense_feedback(self, candidate: AttackCandidate, fitness: float) -> None:
+        defense_type = self._get_defense_type()
+        if fitness >= self.config.success_threshold:
+            candidate.defense_feedback = "success"
+        elif defense_type == "no_defense":
+            candidate.defense_feedback = "no_defense"
+        elif defense_type == "sanitization":
+            candidate.defense_feedback = "sanitized" if candidate.was_sanitized else "too_weak"
+        elif defense_type == "detection":
+            candidate.defense_feedback = "detected" if candidate.was_detected else "too_weak"
+        else:
+            candidate.defense_feedback = "no_signal"
+
+    def _confirm_candidate_with_main_path(
+        self,
+        candidate: AttackCandidate,
+        case: dict,
+        evaluator,
+    ) -> float:
+        """
+        Re-evaluate a candidate through the same single-item path used in main_search.py.
+
+        This avoids false positives from batched target/judge inference drift.
+        """
+        attack_prompt = self._find_injection_position(case["context"], candidate.injected_prompt)
+        defense_result = self.defense.get_response(
+            target_inst=case["target_inst"],
+            context=attack_prompt,
+            llm=self.target_llm,
+        )
+        response = self._apply_defense_result(candidate, defense_result, attack_prompt)
+        fitness = float(
+            evaluator(
+                response=response,
+                ground_truth=case["injected_task_answer"],
+                task_prompt=case["injected_task"],
+            )
+        )
+        self._set_defense_feedback(candidate, fitness)
+        return fitness
     
     def _evaluate_candidate(
         self,
@@ -959,24 +1024,7 @@ class StrategySearchAttacker:
                 context=attack_prompt,
                 llm=self.target_llm,
             )
-            
-            response = defense_result["response"]
-            candidate.full_response = response
-            
-            # Get cleaned context if available
-            cleaned_context = defense_result.get("cleaned_context", attack_prompt)
-            candidate.sanitized_prompt = cleaned_context
-            
-            # Analyze defense feedback
-            defense_type = self._get_defense_type()
-            
-            if defense_type == "sanitization":
-                candidate.was_sanitized = self._check_sanitization(
-                    candidate.injected_prompt, cleaned_context
-                )
-            elif defense_type == "detection":
-                candidate.was_detected, detection_signal = self._check_detection(response)
-                candidate.sanitized_prompt = detection_signal
+            response = self._apply_defense_result(candidate, defense_result, attack_prompt)
             
             # Evaluate ASR - use judge_vllm if available, otherwise use appropriate llm
             if evaluator.__name__ == 'llm_judge':
@@ -1017,18 +1065,7 @@ class StrategySearchAttacker:
                     llm=eval_llm,
                 )
             fitness = float(fitness)
-            
-            # Determine defense feedback type
-            if fitness >= self.config.success_threshold:
-                candidate.defense_feedback = "success"
-            elif defense_type == "no_defense":
-                candidate.defense_feedback = "no_defense"
-            elif defense_type == "sanitization":
-                candidate.defense_feedback = "sanitized" if candidate.was_sanitized else "too_weak"
-            elif defense_type == "detection":
-                candidate.defense_feedback = "detected" if candidate.was_detected else "too_weak"
-            else:
-                candidate.defense_feedback = "no_signal"
+            self._set_defense_feedback(candidate, fitness)
             
             return fitness
             
@@ -1077,24 +1114,11 @@ class StrategySearchAttacker:
                 print(f"  ✅ Batch defense complete: {len(candidates)} candidates")
             
             # Process results
-            defense_type = self._get_defense_type()
             responses = []
             
             for i, (candidate, result) in enumerate(zip(candidates, defense_results)):
-                response = result["response"]
-                candidate.full_response = response
+                response = self._apply_defense_result(candidate, result, attack_prompts[i])
                 responses.append(response)
-                
-                cleaned_context = result.get("cleaned_context", attack_prompts[i])
-                candidate.sanitized_prompt = cleaned_context
-                
-                if defense_type == "sanitization":
-                    candidate.was_sanitized = self._check_sanitization(
-                        candidate.injected_prompt, cleaned_context
-                    )
-                elif defense_type == "detection":
-                    candidate.was_detected, detection_signal = self._check_detection(response)
-                    candidate.sanitized_prompt = detection_signal
             
             # Batch evaluate ASR with early stop
             if evaluator.__name__ == 'llm_judge':
@@ -1149,16 +1173,7 @@ class StrategySearchAttacker:
             
             # Update defense feedback
             for candidate, fitness in zip(candidates, fitnesses):
-                if fitness >= self.config.success_threshold:
-                    candidate.defense_feedback = "success"
-                elif defense_type == "no_defense":
-                    candidate.defense_feedback = "no_defense"
-                elif defense_type == "sanitization":
-                    candidate.defense_feedback = "sanitized" if candidate.was_sanitized else "too_weak"
-                elif defense_type == "detection":
-                    candidate.defense_feedback = "detected" if candidate.was_detected else "too_weak"
-                else:
-                    candidate.defense_feedback = "no_signal"
+                self._set_defense_feedback(candidate, fitness)
             
             return fitnesses
             
@@ -1428,15 +1443,26 @@ class StrategySearchAttacker:
         # Update fitness and check results
         for i, (candidate, fitness) in enumerate(zip(all_candidates, fitnesses)):
             candidate.fitness = fitness
-            
-            if best_ever is None or fitness > best_ever.fitness:
+            confirmed_success = False
+            if fitness >= self.config.success_threshold:
+                confirmed_fitness = self._confirm_candidate_with_main_path(candidate, case, evaluator)
+                candidate.fitness = confirmed_fitness
+                if confirmed_fitness >= self.config.success_threshold:
+                    confirmed_success = True
+                else:
+                    print(
+                        f"  ⚠️ Phase 1 candidate '{candidate.mutation_type}' scored {fitness:.2f} in batch "
+                        f"but only {confirmed_fitness:.2f} on single-item recheck"
+                    )
+
+            if best_ever is None or candidate.fitness > best_ever.fitness:
                 best_ever = candidate
                 if self.verbose:
-                    print(f"  🎯 New best! {candidate.mutation_type}, fitness={fitness:.2f}")
-            
-            if fitness >= self.config.success_threshold and not attack_success:
+                    print(f"  🎯 New best! {candidate.mutation_type}, fitness={candidate.fitness:.2f}")
+
+            if confirmed_success and not attack_success:
                 attack_success = True
-                print(f"  🎉 Phase 1 Success! Best candidate: {candidate.mutation_type}, fitness={fitness:.2f}")
+                print(f"  🎉 Phase 1 Success! Best candidate: {candidate.mutation_type}, fitness={candidate.fitness:.2f}")
                 break
         
         # Print Phase 1 summary (always print, not just when verbose)
@@ -1534,12 +1560,25 @@ class StrategySearchAttacker:
                 # Ensure best_ever is initialized
                 if best_ever is None:
                     best_ever = candidate
-                elif candidate.fitness > best_ever.fitness:
+
+                confirmed_success = False
+                if candidate.fitness >= self.config.success_threshold:
+                    confirmed_fitness = self._confirm_candidate_with_main_path(candidate, case, evaluator)
+                    candidate.fitness = confirmed_fitness
+                    if confirmed_fitness >= self.config.success_threshold:
+                        confirmed_success = True
+                    else:
+                        print(
+                            f"  ⚠️ Generation {generation + 1} candidate '{candidate.mutation_type}' scored "
+                            f"high in batch but only {confirmed_fitness:.2f} on single-item recheck"
+                        )
+
+                if candidate.fitness > best_ever.fitness:
                     best_ever = candidate
                     if self.verbose:
                         print(f"  🎯 New best! Line {i+1}, fitness={best_ever.fitness:.2f}")
                 
-                if candidate.fitness >= self.config.success_threshold:
+                if confirmed_success:
                     any_success = True
                     print(f"  🎉 Generation {generation + 1}: Attack success! Fitness={candidate.fitness:.2f}")
                     break

@@ -15,6 +15,8 @@ This project does not currently use tagged releases consistently, so this change
 - Fixed editable package installation by switching `pyproject.toml` to the standard `setuptools.build_meta` backend and adding `wheel` as a build requirement.
 - Moved batch defense support into defense classes through `BaseDefense.execute_batch()` and `BaseDefense.get_response_batch()`.
 - Added `Model.batch_query()` with provider-aware fallback behavior.
+- Fixed HuggingFace batch generation for decoder-only models by switching to left padding and explicitly passing `pad_token_id`.
+- Fixed the default `BaseDefense` response path so batch and single-item inference both use `cleaned_context` when a defense returns one.
 - Removed the separate `DEFENSES_BATCH` registry from `piarena.defenses`.
 - Refactored `strategy_search` to evaluate candidates through the defense object rather than separate batch defense functions.
 - Simplified `main_search.py` so `strategy_search` receives the defense object directly.
@@ -22,6 +24,7 @@ This project does not currently use tagged releases consistently, so this change
 - Simplified `strategy_search` so attacker model loading is lazy when possible:
   - attacker vLLM is attempted from the attacker model path first
   - a full `attacker_llm = Model(...)` is loaded only when a non-vLLM fallback is needed
+- Added single-item success revalidation in `strategy_search` so batch-only false positives do not terminate the search early.
 
 ### Documentation
 

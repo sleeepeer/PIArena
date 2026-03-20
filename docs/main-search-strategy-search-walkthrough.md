@@ -578,7 +578,7 @@ If a defense does not override the batch path, [base.py:52](/Users/rfg5487/Deskt
 1. validate list lengths
 2. call `execute_batch()`
 3. by default, `execute_batch()` just loops over `execute()`
-4. build one batch of messages
+4. build one batch of messages, using `cleaned_context` when the defense returned one
 5. call `llm.batch_query(messages_batch)`
 6. merge each defense result with each response
 
@@ -643,7 +643,8 @@ This feedback is what drives the next mutation step.
 
 Back in `search()`:
 
-- if any candidate fitness reaches `success_threshold`, Phase 1 stops
+- if any candidate fitness reaches `success_threshold`, `strategy_search` now re-runs that candidate through the same single-item path used by final evaluation
+- only if that single-item recheck still reaches `success_threshold` does Phase 1 stop
 - otherwise the best candidates go into Phase 2
 
 Output of Phase 1:
@@ -927,6 +928,8 @@ This is good because:
 ### 2. `strategy_search` optimizes against defended responses, not raw model responses
 
 That is why `get_response_batch()` is the critical API.
+
+`strategy_search` still treats batch evaluation as provisional. A candidate that looks successful in batch is rechecked through `defense.get_response(...)` plus the normal evaluator before the attack declares success.
 
 ### 3. The attack does not directly modify the defense
 
