@@ -33,7 +33,8 @@ python scripts/run_search.py    # Search-based attacks
 git submodule update --init --recursive
 cd agents/agentdojo && pip install -e . && cd ../..
 python main_injecagent.py --model meta-llama/Llama-3.1-8B-Instruct --defense none
-python main_agentdojo.py --model gpt-5-mini --attack none
+python main_agentdojo.py --model gpt-5-mini --attack none --suite workspace
+python main_agentdojo.py --model gpt-4o-2024-08-06 --attack important_instructions --defense datafilter --suite shopping
 
 # Website (React 18 + Vite)
 cd website && npm install && npm run dev
@@ -118,6 +119,7 @@ CLI args > YAML config (`configs/experiments/`) > hardcoded defaults. YAML suppo
   - `pair` / `tap` still use an eager attacker model object
   - `strategy_search` accepts an attacker model path and lazily loads `attacker_llm` only if a non-vLLM fallback is needed
 - `main_injecagent.py` / `main_agentdojo.py` — Agent benchmarks
+  - `main_agentdojo.py` now covers both classic AgentDojo suites and merged AgentDyn suites in the vendored `agents/agentdojo` tree
 - `scripts/run.py` — Batch runner for standard attacks
 - `scripts/run_search.py` — Batch runner for search-based attacks
 - `scripts/run_injecagent.py` / `scripts/run_agentdojo.py` — Batch runners for agent benchmarks

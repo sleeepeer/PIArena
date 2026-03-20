@@ -8,6 +8,7 @@ from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
     ChatCompletionContentPartTextParam,
     ChatCompletionDeveloperMessageParam,
+    ChatCompletionSystemMessageParam,
     ChatCompletionMessage,
     ChatCompletionMessageParam,
     ChatCompletionMessageToolCall,
@@ -77,6 +78,10 @@ def _content_blocks_to_openai_content_blocks(
 def _message_to_openai(message: ChatMessage, model_name: str) -> ChatCompletionMessageParam:
     match message["role"]:
         case "system":
+            if model_name == "qwen3-max":
+                return ChatCompletionSystemMessageParam(
+                    role="system", content=_content_blocks_to_openai_content_blocks(message)
+                )
             return ChatCompletionDeveloperMessageParam(
                 role="developer", content=_content_blocks_to_openai_content_blocks(message)
             )
@@ -110,7 +115,6 @@ def _message_to_openai(message: ChatMessage, model_name: str) -> ChatCompletionM
 
 
 def _openai_to_tool_call(tool_call: ChatCompletionMessageToolCall) -> FunctionCall:
-    # Handle None or empty arguments
     args_str = tool_call.function.arguments
     if args_str is None or args_str == "":
         args = {}
@@ -136,7 +140,12 @@ def _assistant_message_to_content(message: ChatCompletionMessage) -> list[Messag
 
 def _openai_to_assistant_message(message: ChatCompletionMessage) -> ChatAssistantMessage:
     if message.tool_calls is not None:
-        tool_calls = [_openai_to_tool_call(tool_call) for tool_call in message.tool_calls]
+        tool_calls = []
+        for tool_call in message.tool_calls:
+            try:
+                tool_calls.append(_openai_to_tool_call(tool_call))
+            except Exception:
+                continue
     else:
         tool_calls = None
     return ChatAssistantMessage(role="assistant", content=_assistant_message_to_content(message), tool_calls=tool_calls)
@@ -170,7 +179,7 @@ def chat_completion_request(
         messages=messages,
         tools=tools or NOT_GIVEN,
         tool_choice="auto" if tools else NOT_GIVEN,
-        temperature=temperature or NOT_GIVEN,
+        temperature=temperature if temperature is not None else NOT_GIVEN,
         reasoning_effort=reasoning_effort or NOT_GIVEN,
     )
 
@@ -229,11 +238,19 @@ class OpenAILLM(BasePipelineElement):
 
 
 class OpenAILLMToolFilter(BasePipelineElement):
-    def __init__(self, prompt: str, client: openai.OpenAI, model: str, temperature: float | None = 0.0) -> None:
+    def __init__(
+        self,
+        prompt: str,
+        client: openai.OpenAI,
+        model: str,
+        reasoning_effort: ChatCompletionReasoningEffort | None = None,
+        temperature: float | None = 0.0,
+    ) -> None:
         self.prompt = prompt
         self.client = client
         self.model = model
         self.temperature = temperature
+        self.reasoning_effort: ChatCompletionReasoningEffort | None = reasoning_effort
 
     def query(
         self,
@@ -251,7 +268,8 @@ class OpenAILLMToolFilter(BasePipelineElement):
             messages=openai_messages,
             tools=openai_tools or NOT_GIVEN,
             tool_choice="none",
-            temperature=self.temperature,
+            temperature=self.temperature if self.temperature is not None else NOT_GIVEN,
+            reasoning_effort=self.reasoning_effort or NOT_GIVEN,
         )
         output = _openai_to_assistant_message(completion.choices[0].message)
 

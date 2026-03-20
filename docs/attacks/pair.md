@@ -20,7 +20,7 @@ Related work:
 python main_search.py \
   --dataset squad_v2 \
   --attack pair \
-  --defense pisanitizer \
+  --defense promptguard \
   --backend_llm Qwen/Qwen3-4B-Instruct-2507 \
   --attacker_llm Qwen/Qwen3-4B-Instruct-2507
 ```

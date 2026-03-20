@@ -1,26 +1,30 @@
 """
 AgentDojo Benchmark Evaluation with PIArena Defenses
 
-This script evaluates PIArena defenses on the AgentDojo benchmark for
-prompt injection attacks in tool-integrated LLM agents.
+This script evaluates prompt injection defenses on the vendored AgentDojo
+benchmark integration in PIArena. The vendored benchmark tree includes both
+the original AgentDojo suites and the merged AgentDyn suites.
 
 Usage:
-    # Benign utility (no attack) with GPT-4o (OpenAI API)
+    # Benign utility on a classic AgentDojo suite
     python main_agentdojo.py --model gpt-4o-2024-05-13 --attack none
 
-    # With Azure OpenAI (uses configs/azure_configs/gpt-4o.yaml)
+    # PIArena defense on a classic AgentDojo suite
     python main_agentdojo.py --model azure/gpt-4o --attack tool_knowledge --defense datafilter
 
-    # With HuggingFace model (starts vLLM server automatically)
+    # PIArena defense on a merged AgentDyn suite
+    python main_agentdojo.py --model gpt-4o-2024-08-06 --attack important_instructions --defense datafilter --suite shopping
+
+    # Local HuggingFace model (starts vLLM server automatically)
     python main_agentdojo.py --model meta-llama/Llama-3.1-8B-Instruct --attack tool_knowledge --defense datafilter
 
     # Specify tensor parallel size for large models
     python main_agentdojo.py --model meta-llama/Llama-3.1-70B-Instruct --tensor_parallel_size 4 --attack none
 
 Setup:
-    AgentDojo is included as a git submodule with PIArena modifications pre-applied.
+    AgentDojo is vendored with PIArena-specific modifications and merged AgentDyn extensions.
     Initialize with: git submodule update --init --recursive
-    Then install: cd agentdojo && pip install -e .
+    Then install: cd agents/agentdojo && pip install -e .
 """
 
 import os
@@ -37,13 +41,44 @@ AGENTDOJO_PATH = "agents/agentdojo"
 AZURE_CONFIG_DIR = "configs/azure_configs"
 
 # Known API model prefixes (don't need vLLM server)
-API_MODEL_PREFIXES = ["gpt", "claude", "gemini", "command-r"]
+API_MODEL_PREFIXES = ["gpt", "claude", "gemini", "command-r", "google/"]
+API_MODEL_NAMES = {
+    "qwen3-max",
+    "qwen/qwen-2.5-72b-instruct",
+    "qwen/qwen3-235b-a22b-2507",
+    "meta-llama/llama-3.3-70b-instruct",
+}
+
+PIARENA_DEFENSES = {
+    "datafilter",
+    "pisanitizer",
+    "promptguard",
+    "datasentinel",
+    "piguard",
+    "attentiontracker",
+    "promptarmor",
+    "promptlocate",
+    "secalign",
+}
+
+BENCHMARK_DEFENSES = {
+    "tool_filter",
+    "transformers_pi_detector",
+    "piguard_detector",
+    "prompt_guard_2_detector",
+    "spotlighting_with_delimiting",
+    "repeat_user_prompt",
+}
 
 # Map Azure model names to AgentDojo model enums
 # AgentDojo CLI expects specific enum values, not deployment names
 AZURE_TO_AGENTDOJO_MODEL = {
+    "gpt-5.1-2025-11-13": "GPT_5_1_2025_11_13",
     "gpt-4o": "GPT_4O_2024_05_13",
+    "gpt-4o-2024-08-06": "GPT_4O_2024_08_06",
     "gpt-4o-2024-05-13": "GPT_4O_2024_05_13",
+    "gpt-5-mini": "GPT_5_MINI_2025_08_07",
+    "gpt-5-mini-2025-08-07": "GPT_5_MINI_2025_08_07",
     "gpt-4o-mini": "GPT_4O_MINI_2024_07_18",
     "gpt-4o-mini-2024-07-18": "GPT_4O_MINI_2024_07_18",
     "gpt-4-0125-preview": "GPT_4_0125_PREVIEW",
@@ -62,7 +97,7 @@ def is_azure_model(model: str) -> bool:
 def is_api_model(model: str) -> bool:
     """Check if model is an API-based model (OpenAI, Anthropic, Google, Cohere)."""
     model_lower = model.lower()
-    return any(model_lower.startswith(prefix) for prefix in API_MODEL_PREFIXES)
+    return model_lower in API_MODEL_NAMES or any(model_lower.startswith(prefix) for prefix in API_MODEL_PREFIXES)
 
 
 def is_huggingface_model(model: str) -> bool:
@@ -90,21 +125,17 @@ def load_azure_config(model_name: str) -> dict:
 
 
 def check_agentdojo_installed():
-    """Check if AgentDojo is cloned and installed."""
+    """Check if the vendored benchmark tree exists."""
     if not os.path.exists(AGENTDOJO_PATH):
         raise FileNotFoundError(
             f"AgentDojo not found at '{AGENTDOJO_PATH}'. Please run:\n"
             "  git submodule update --init --recursive\n"
-            "  cd agentdojo && pip install -e ."
+            "  cd agents/agentdojo && pip install -e ."
         )
 
-    try:
-        import agentdojo  # noqa: F401
-    except ImportError:
-        raise ImportError(
-            "AgentDojo not installed as package. Please run:\n"
-            "  cd agentdojo && pip install -e ."
-        )
+    benchmark_entrypoint = os.path.join(AGENTDOJO_PATH, "src", "agentdojo", "scripts", "benchmark.py")
+    if not os.path.exists(benchmark_entrypoint):
+        raise FileNotFoundError(f"Benchmark entrypoint not found: {benchmark_entrypoint}")
 
 
 def start_vllm_server(model: str, tensor_parallel_size: int, port: int = 8000) -> tuple[subprocess.Popen, str]:
@@ -193,7 +224,7 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
     env["PYTHONPATH"] = os.path.dirname(os.path.abspath(__file__)) + ":" + env.get("PYTHONPATH", "")
     env["PIARENA_PATH"] = os.path.dirname(os.path.abspath(__file__))
 
-    if args.defense != "none":
+    if args.defense in PIARENA_DEFENSES:
         env["PIARENA_DEFENSE"] = args.defense
 
     # Set Azure environment variables if needed
@@ -233,8 +264,10 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
         cmd.extend(["--attack", args.attack])
 
     # Add defense
-    if args.defense != "none":
+    if args.defense in PIARENA_DEFENSES:
         cmd.extend(["--defense", "piarena"])
+    elif args.defense in BENCHMARK_DEFENSES:
+        cmd.extend(["--defense", args.defense])
 
     # Add suite if specified
     if args.suite:
@@ -252,7 +285,7 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
 
     print(f"\n[Run] Executing: {' '.join(cmd)}")
     print(f"[Run] Working directory: {AGENTDOJO_PATH}/src")
-    if args.defense != "none":
+    if args.defense in PIARENA_DEFENSES:
         print(f"[Run] PIARENA_DEFENSE={args.defense}")
     print()
 
@@ -275,6 +308,10 @@ def main(args):
     if is_azure_model(args.model):
         model_type = "azure"
         azure_model_name = args.model.split("/", 1)[1]  # Extract model name after "azure/"
+    elif args.model_backend == "api":
+        model_type = "api"
+    elif args.model_backend == "huggingface":
+        model_type = "huggingface"
     elif is_api_model(args.model):
         model_type = "api"
     else:
@@ -282,7 +319,7 @@ def main(args):
 
     # Print configuration
     print("\n" + "="*60)
-    print("AgentDojo Benchmark")
+    print("AgentDojo / AgentDyn Benchmark")
     print("="*60)
     print(f"  Model:    {args.model}")
     if model_type == "azure":
@@ -329,21 +366,29 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AgentDojo Benchmark Evaluation")
+    parser = argparse.ArgumentParser(description="AgentDojo / AgentDyn Benchmark Evaluation")
     parser.add_argument("--model", type=str, default="gpt-4o-2024-05-13",
-                        help="Model: HuggingFace path (e.g., meta-llama/Llama-3.1-8B-Instruct), "
-                             "API model (e.g., gpt-4o-2024-05-13), "
+                        help="Model: HuggingFace path (for local vLLM), API model id, or merged AgentDyn provider id, "
                              "or Azure (e.g., azure/gpt-4o)")
+    parser.add_argument("--model_backend", type=str, default="auto",
+                        choices=["auto", "api", "huggingface"],
+                        help="Override model routing when an identifier could be interpreted as either a remote API "
+                             "model or a local HuggingFace model")
     parser.add_argument("--attack", type=str, default="tool_knowledge",
                         choices=["none", "direct", "important_instructions", "tool_knowledge", "injecagent"],
                         help="Attack type to evaluate (use 'none' for benign utility)")
     parser.add_argument("--defense", type=str, default="none",
                         choices=["none", "datafilter", "pisanitizer", "promptguard",
                                  "datasentinel", "piguard", "attentiontracker",
-                                 "promptarmor", "promptlocate"],
-                        help="Defense to evaluate")
+                                 "promptarmor", "promptlocate", "secalign",
+                                 "tool_filter", "transformers_pi_detector",
+                                 "piguard_detector", "prompt_guard_2_detector",
+                                 "spotlighting_with_delimiting", "repeat_user_prompt"],
+                        help="Defense to evaluate. PIArena defenses are routed through the vendored piarena adapter; "
+                             "AgentDojo and AgentDyn native defenses are passed through directly")
     parser.add_argument("--suite", "-s", type=str, default=None,
-                        choices=["workspace", "slack", "travel", "banking"],
+                        choices=["workspace", "slack", "travel", "banking",
+                                 "shopping", "github", "dailylife"],
                         help="Specific suite to evaluate (default: all)")
     parser.add_argument("--user_tasks", "-ut", type=str, nargs="*", default=None,
                         help="Specific user tasks to evaluate")

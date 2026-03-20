@@ -56,7 +56,7 @@ from piarena.llm import Model
 
 llm = Model("Qwen/Qwen3-4B-Instruct-2507")
 attack = get_attack("combined")
-defense = get_defense("pisanitizer")
+defense = get_defense("promptguard")
 
 target_inst = "Summarize the passage."
 context = "Your clean context goes here."

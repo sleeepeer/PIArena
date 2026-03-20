@@ -365,60 +365,59 @@ class PageErrorBoundary extends React.Component {
 
 function renderInlineMarkdown(text, keyPrefix) {
   const nodes = [];
-  const parts = String(text).split(/(`[^`]+`)/g);
-  parts.forEach((part, i) => {
-    if (!part) return;
-    if (part.startsWith('`') && part.endsWith('`')) {
+  const raw = String(text || '');
+  const pattern = /\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*/g;
+  let lastIndex = 0;
+  let match;
+  let partIndex = 0;
+
+  while ((match = pattern.exec(raw)) !== null) {
+    if (match.index > lastIndex) {
       nodes.push(
-        <code key={`${keyPrefix}-code-${i}`} className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-800 text-xs font-mono">
-          {part.slice(1, -1)}
+        <React.Fragment key={`${keyPrefix}-txt-${partIndex++}`}>
+          {raw.slice(lastIndex, match.index)}
+        </React.Fragment>
+      );
+    }
+
+    if (match[1] !== undefined && match[2] !== undefined) {
+      const resolved = resolveInlineHref(match[2]);
+      nodes.push(
+        <a
+          key={`${keyPrefix}-link-${partIndex++}`}
+          href={resolved.href}
+          target={resolved.external ? "_blank" : undefined}
+          rel={resolved.external ? "noopener noreferrer" : undefined}
+          className="text-blue-700 hover:text-blue-800 underline underline-offset-2"
+        >
+          {renderInlineMarkdown(match[1], `${keyPrefix}-label-${partIndex}`)}
+        </a>
+      );
+    } else if (match[3] !== undefined) {
+      nodes.push(
+        <code key={`${keyPrefix}-code-${partIndex++}`} className="px-1.5 py-0.5 bg-zinc-100 rounded text-zinc-800 text-xs font-mono">
+          {match[3]}
         </code>
       );
-      return;
+    } else if (match[4] !== undefined) {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${partIndex++}`} className="font-semibold text-zinc-900">
+          {match[4]}
+        </strong>
+      );
     }
-    let remaining = part;
-    let localIndex = 0;
-    while (remaining.length > 0) {
-      const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
-      const boldMatch = remaining.match(/\*\*([^*]+)\*\*/);
-      const matches = [linkMatch, boldMatch]
-        .filter(Boolean)
-        .sort((a, b) => a.index - b.index);
-      const match = matches[0];
-      if (!match) {
-        nodes.push(<React.Fragment key={`${keyPrefix}-txt-${i}-${localIndex++}`}>{remaining}</React.Fragment>);
-        break;
-      }
-      if (match.index > 0) {
-        nodes.push(
-          <React.Fragment key={`${keyPrefix}-txt-${i}-${localIndex++}`}>
-            {remaining.slice(0, match.index)}
-          </React.Fragment>
-        );
-      }
-      if (match[0].startsWith('[')) {
-        const resolved = resolveInlineHref(match[2]);
-        nodes.push(
-          <a
-            key={`${keyPrefix}-link-${i}-${localIndex++}`}
-            href={resolved.href}
-            target={resolved.external ? "_blank" : undefined}
-            rel={resolved.external ? "noopener noreferrer" : undefined}
-            className="text-blue-700 hover:text-blue-800 underline underline-offset-2"
-          >
-            {match[1]}
-          </a>
-        );
-      } else {
-        nodes.push(
-          <strong key={`${keyPrefix}-strong-${i}-${localIndex++}`} className="font-semibold text-zinc-900">
-            {match[1]}
-          </strong>
-        );
-      }
-      remaining = remaining.slice(match.index + match[0].length);
-    }
-  });
+
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < raw.length) {
+    nodes.push(
+      <React.Fragment key={`${keyPrefix}-txt-${partIndex++}`}>
+        {raw.slice(lastIndex)}
+      </React.Fragment>
+    );
+  }
+
   return nodes;
 }
 

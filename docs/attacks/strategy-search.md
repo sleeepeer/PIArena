@@ -17,7 +17,7 @@ Source:
 python main_search.py \
   --dataset squad_v2 \
   --attack strategy_search \
-  --defense pisanitizer \
+  --defense promptarmor \
   --backend_llm Qwen/Qwen3-4B-Instruct-2507 \
   --attacker_llm Qwen/Qwen3-4B-Instruct-2507
 ```

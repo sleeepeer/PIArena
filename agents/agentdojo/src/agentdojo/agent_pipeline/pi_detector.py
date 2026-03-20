@@ -151,11 +151,11 @@ class TransformersBasedPIDetector(PromptInjectionDetector):
         self.safe_label = safe_label
         self.threshold = threshold
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.pipeline = pipeline("text-classification", model=self.model_name, device=device)
+        self.pipeline = pipeline("text-classification", model=self.model_name, device=device, trust_remote_code=True)
 
     def detect(self, tool_output: str) -> tuple[bool, float]:
         result: dict = self.pipeline(tool_output)[0]  # type: ignore
-        safety_score: float = result["score"] if result["label"] == self.safe_label else 1 - result["score"]
+        safety_score: float = result["score"] if result["label"].lower() == self.safe_label.lower() else 1 - result["score"]
         is_injection: bool = safety_score < self.threshold
 
         return is_injection, safety_score

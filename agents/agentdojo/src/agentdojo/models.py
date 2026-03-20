@@ -6,9 +6,19 @@ class ModelsEnum(StrEnum):
 
     GPT_5_MINI = "gpt-5-mini"
     """GPT-5 Mini"""
+    GPT_5_1_2025_11_13 = "gpt-5.1-2025-11-13"
+    """GPT-5.1"""
     GPT_4O = "gpt-4o"
     """GPT-4o"""
+    GPT_4O_2024_08_06 = "gpt-4o-2024-08-06"
+    """GPT-4o"""
+    GPT_4O_2024_05_13 = "gpt-4o-2024-05-13"
+    """GPT-4o"""
     GPT_4O_MINI = "gpt-4o-mini"
+    """GPT-4o Mini"""
+    GPT_5_MINI_2025_08_07 = "gpt-5-mini-2025-08-07"
+    """GPT-5 Mini"""
+    GPT_4O_MINI_2024_07_18 = "gpt-4o-mini-2024-07-18"
     """GPT-4o Mini"""
     GPT_4_0125_PREVIEW = "gpt-4-0125-preview"
     """GPT-4 Turbo Preview 0125"""
@@ -28,8 +38,12 @@ class ModelsEnum(StrEnum):
     """Claude 3.7 Sonnet"""
     CLAUDE_3_7_SONNET_20250219_THINKING_16000 = "claude-3-7-sonnet-20250219-thinking-16000"
     """Claude 3.7 Sonnet"""
+    CLAUDE_SONNET_4_5_20250929 = "claude-sonnet-4-5-20250929"
+    """Claude 4.5 Sonnet"""
     CLAUDE_3_HAIKU_20240307 = "claude-3-haiku-20240307"
     """Claude 3 Haiku"""
+    CLAUDE_HAIKU_4_5_20251001 = "claude-haiku-4-5-20251001"
+    """Claude 4.5 Haiku"""
     COMMAND_R_PLUS = "command-r-plus"
     """Command R Plus"""
     COMMAND_R = "command-r"
@@ -52,18 +66,35 @@ class ModelsEnum(StrEnum):
     """Gemini 2.0 Flash 001"""
     GEMINI_2_5_FLASH_PREVIEW_04_17 = "gemini-2.5-flash-preview-04-17"
     """Gemini 2.5 Flash Preview 04/17"""
+    GEMINI_2_5_FLASH = "gemini-2.5-flash"
+    """Gemini 2.5 Flash"""
     GEMINI_2_5_PRO_PREVIEW_05_06 = "gemini-2.5-pro-preview-05-06"
     """Gemini 2.5 Pro Preview 05/06"""
+    GEMINI_2_5_PRO = "gemini-2.5-pro"
+    """Gemini 2.5 Pro"""
     LOCAL = "local"
     """Local model"""
     VLLM_PARSED = "vllm_parsed"
     """VLLM parsed model"""
+    QWEN_2_5_72B = "qwen/qwen-2.5-72b-instruct"
+    LLAMA_3_3_70B = "meta-llama/llama-3.3-70b-instruct"
+    QWEN3_235B = "qwen/qwen3-235b-a22b-2507"
+    OPENROUTER_GEMINI_2_5_PRO = "google/gemini-2.5-pro"
+    OPENROUTER_GEMINI_2_5_FLASH = "google/gemini-2.5-flash"
+    OPENROUTER_GEMINI_3_PRO_PREVIEW = "google/gemini-3-pro-preview"
+    OPENROUTER_GEMINI_3_FLASH_PREVIEW = "google/gemini-3-flash-preview"
+    QWEN3_MAX = "qwen3-max"
 
 
 MODEL_PROVIDERS = {
     ModelsEnum.GPT_5_MINI: "openai",
+    ModelsEnum.GPT_5_1_2025_11_13: "openai",
     ModelsEnum.GPT_4O: "openai",
+    ModelsEnum.GPT_4O_2024_08_06: "openai",
+    ModelsEnum.GPT_4O_2024_05_13: "openai",
+    ModelsEnum.GPT_5_MINI_2025_08_07: "openai",
     ModelsEnum.GPT_4O_MINI: "openai",
+    ModelsEnum.GPT_4O_MINI_2024_07_18: "openai",
     ModelsEnum.GPT_3_5_TURBO_0125: "openai",
     ModelsEnum.GPT_4_0125_PREVIEW: "openai",
     ModelsEnum.GPT_4_TURBO_2024_04_09: "openai",
@@ -73,7 +104,9 @@ MODEL_PROVIDERS = {
     ModelsEnum.CLAUDE_3_5_SONNET_20241022: "anthropic",
     ModelsEnum.CLAUDE_3_7_SONNET_20250219: "anthropic",
     ModelsEnum.CLAUDE_3_7_SONNET_20250219_THINKING_16000: "anthropic",
+    ModelsEnum.CLAUDE_SONNET_4_5_20250929: "anthropic",
     ModelsEnum.CLAUDE_3_HAIKU_20240307: "anthropic",
+    ModelsEnum.CLAUDE_HAIKU_4_5_20251001: "anthropic",
     ModelsEnum.COMMAND_R_PLUS: "cohere",
     ModelsEnum.COMMAND_R: "cohere",
     ModelsEnum.MISTRALAI_MIXTRAL_8X7B_INSTRUCT_V0_1: "together",
@@ -85,16 +118,31 @@ MODEL_PROVIDERS = {
     ModelsEnum.GEMINI_2_0_FLASH_EXP: "google",
     ModelsEnum.GEMINI_2_0_FLASH_001: "google",
     ModelsEnum.GEMINI_2_5_FLASH_PREVIEW_04_17: "google",
+    ModelsEnum.GEMINI_2_5_FLASH: "google",
     ModelsEnum.GEMINI_2_5_PRO_PREVIEW_05_06: "google",
+    ModelsEnum.GEMINI_2_5_PRO: "google",
     ModelsEnum.LOCAL: "local",
     ModelsEnum.VLLM_PARSED: "vllm_parsed",
+    ModelsEnum.QWEN_2_5_72B: "openrouter",
+    ModelsEnum.LLAMA_3_3_70B: "openrouter",
+    ModelsEnum.QWEN3_235B: "openrouter",
+    ModelsEnum.OPENROUTER_GEMINI_2_5_PRO: "openrouter",
+    ModelsEnum.OPENROUTER_GEMINI_2_5_FLASH: "openrouter",
+    ModelsEnum.OPENROUTER_GEMINI_3_PRO_PREVIEW: "openrouter",
+    ModelsEnum.OPENROUTER_GEMINI_3_FLASH_PREVIEW: "openrouter",
+    ModelsEnum.QWEN3_MAX: "mulerouter",
 }
 
 
 MODEL_NAMES = {
-    "gpt-5-mini": "GPT-5-Mini",
+    "gpt-5-mini": "GPT-5 Mini",
+    "gpt-5.1-2025-11-13": "GPT-5",
     "gpt-4o": "GPT-4o",
+    "gpt-4o-2024-08-06": "GPT-4o",
+    "gpt-4o-2024-05-13": "GPT-4o",
+    "gpt-5-mini-2025-08-07": "GPT-5 Mini",
     "gpt-4o-mini": "GPT-4o Mini",
+    "gpt-4o-mini-2024-07-18": "GPT-4o Mini",
     "gpt-3.5-turbo-0125": "GPT-3.5 Turbo",
     "gpt-4-turbo-2024-04-09": "GPT-4 Turbo",
     "gpt-4-0125-preview": "GPT-4 Turbo Preview",
@@ -104,7 +152,9 @@ MODEL_NAMES = {
     "claude-3-5-sonnet-20241022": "Claude 3.5 Sonnet",
     "claude-3-7-sonnet-20250219": "Claude 3.7 Sonnet",
     "claude-3-7-sonnet-20250219-thinking-16000": "Claude 3.7 Sonnet",
+    "claude-sonnet-4-5-20250929": "Claude 4.5 Sonnet",
     "claude-3-haiku-20240307": "Claude 3 Haiku",
+    "claude-haiku-4-5-20251001": "Claude 4.5 Haiku",
     "command-r-plus": "Command R+",
     "command-r": "Command R",
     "mistralai/Mixtral-8x7B-Instruct-v0.1": "Mixtral",
@@ -116,7 +166,17 @@ MODEL_NAMES = {
     "gemini-2.0-flash-exp": "AI model developed by Google",
     "gemini-2.0-flash-001": "AI model developed by Google",
     "gemini-2.5-flash-preview-04-17": "AI model developed by Google",
+    "gemini-2.5-flash": "AI model developed by Google",
     "gemini-2.5-pro-preview-05-06": "AI model developed by Google",
+    "gemini-2.5-pro": "AI model developed by Google",
     "local": "Local model",
     "vllm_parsed": "Local model",
+    "qwen/qwen-2.5-72b-instruct": "Qwen 2.5",
+    "meta-llama/llama-3.3-70b-instruct": "Llama 3.3",
+    "qwen/qwen3-235b-a22b-2507": "Qwen 3",
+    "google/gemini-2.5-pro": "AI model developed by Google",
+    "google/gemini-2.5-flash": "AI model developed by Google",
+    "google/gemini-3-pro-preview": "AI model developed by Google",
+    "google/gemini-3-flash-preview": "AI model developed by Google",
+    "qwen3-max": "Qwen 3",
 }

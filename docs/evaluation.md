@@ -20,7 +20,7 @@ python main.py \
   --dataset squad_v2 \
   --backend_llm Qwen/Qwen3-4B-Instruct-2507 \
   --attack combined \
-  --defense pisanitizer \
+  --defense promptguard \
   --name demo \
   --seed 42
 ```
@@ -31,7 +31,7 @@ You can also use a config file:
 dataset: squad_v2
 backend_llm: Qwen/Qwen3-4B-Instruct-2507
 attack: combined
-defense: pisanitizer
+defense: promptguard
 name: demo
 seed: 42
 
@@ -56,7 +56,7 @@ Use `main_search.py` for attacks that iteratively search for stronger injections
 python main_search.py \
   --dataset squad_v2 \
   --attack strategy_search \
-  --defense pisanitizer \
+  --defense datafilter \
   --backend_llm Qwen/Qwen3-4B-Instruct-2507 \
   --attacker_llm Qwen/Qwen3-4B-Instruct-2507
 ```
@@ -114,12 +114,25 @@ git submodule update --init --recursive
 cd agents/agentdojo && pip install -e . && cd ../..
 ```
 
+`main_agentdojo.py` now covers both the original AgentDojo suites and the merged AgentDyn suites inside the vendored `agents/agentdojo` tree.
+
 Examples:
 
 ```bash
 python main_injecagent.py --model meta-llama/Llama-3.1-8B-Instruct --defense none
-python main_agentdojo.py --model gpt-5-mini --attack none
+python main_agentdojo.py --model gpt-5-mini --attack none --suite workspace
+python main_agentdojo.py --model gpt-4o-2024-08-06 --attack important_instructions --defense datafilter --suite shopping
 ```
+
+Suite mapping:
+
+- AgentDojo: `workspace`, `slack`, `travel`, `banking`
+- AgentDyn: `shopping`, `github`, `dailylife`
+
+Defense routing:
+
+- PIArena defenses such as `datafilter`, `pisanitizer`, and `promptguard` still run through the vendored PIArena adapter inside `agentdojo`
+- benchmark-native defenses such as `tool_filter`, `repeat_user_prompt`, `piguard_detector`, and `prompt_guard_2_detector` can be selected directly with `--defense`
 
 ## How Evaluation Is Chosen
 
