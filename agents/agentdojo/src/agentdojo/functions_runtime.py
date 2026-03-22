@@ -54,6 +54,8 @@ class FunctionCall(BaseModel):
 FunctionCallArgTypes = str | int | float | bool | None | dict | list | FunctionCall
 """Valid types for function call arguments."""
 
+FunctionCall.model_rebuild()
+
 
 FunctionReturnType: TypeAlias = BaseModel | Sequence["FunctionReturnType"] | dict | str | int | float | bool | None
 """Union of valid return types for functions. The default [FunctionsRuntime][agentdojo.functions_runtime.FunctionsRuntime]

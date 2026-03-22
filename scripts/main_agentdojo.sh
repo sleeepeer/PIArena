@@ -45,9 +45,9 @@ export OPENAI_API_KEY=Your_OpenAI_API_Key
 # Build command arguments
 CMD="python -u main_agentdojo.py --model \"${MODEL}\" --attack \"${ATTACK}\" --defense \"${DEFENSE}\" --tensor_parallel_size \"${TENSOR_PARALLEL_SIZE}\" --name \"${NAME}\""
 
-# Add suite if specified (not "all")
+# Add suite(s) if specified (not "all")
 if [ "${SUITE}" != "all" ]; then
-    CMD="${CMD} --suite \"${SUITE}\""
+    CMD="${CMD} --suite ${SUITE}"
 fi
 
 # Run main_agentdojo.py with output redirected to log file

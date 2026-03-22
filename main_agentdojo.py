@@ -269,9 +269,10 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
     elif args.defense in BENCHMARK_DEFENSES:
         cmd.extend(["--defense", args.defense])
 
-    # Add suite if specified
-    if args.suite:
-        cmd.extend(["-s", args.suite])
+    # Add suite(s) if specified
+    if args.suites:
+        for suite in args.suites:
+            cmd.extend(["-s", suite])
 
     # Add user tasks if specified
     if args.user_tasks:
@@ -330,7 +331,7 @@ def main(args):
         print(f"  Type:     API")
     print(f"  Attack:   {args.attack}")
     print(f"  Defense:  {args.defense}")
-    print(f"  Suite:    {args.suite or 'all'}")
+    print(f"  Suite:    {', '.join(args.suites) if args.suites else 'all'}")
     if model_type == "huggingface":
         print(f"  TP Size:  {args.tensor_parallel_size}")
     print("="*60)
@@ -386,10 +387,9 @@ if __name__ == "__main__":
                                  "spotlighting_with_delimiting", "repeat_user_prompt"],
                         help="Defense to evaluate. PIArena defenses are routed through the vendored piarena adapter; "
                              "AgentDojo and AgentDyn native defenses are passed through directly")
-    parser.add_argument("--suite", "-s", type=str, default=None,
-                        choices=["workspace", "slack", "travel", "banking",
-                                 "shopping", "github", "dailylife"],
-                        help="Specific suite to evaluate (default: all)")
+    parser.add_argument("--suite", "-s", dest="suites", type=str, nargs="*", default=None,
+                        help="Specific suite(s) to evaluate (default: all). "
+                             "Valid suites: workspace, slack, travel, banking, shopping, github, dailylife")
     parser.add_argument("--user_tasks", "-ut", type=str, nargs="*", default=None,
                         help="Specific user tasks to evaluate")
     parser.add_argument("--tensor_parallel_size", type=int, default=1,
