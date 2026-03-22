@@ -29,6 +29,7 @@ def run(model, attack, defense, suite="all", tensor_parallel_size=1, name="test"
         slurm_cmd = f'sbatch scripts/main_agentdojo.sh "{model}" "{attack}" "{defense}" "{suite}" "{tensor_parallel_size}" "{name}" "{log_file}"'
         print(slurm_cmd)
         os.system(slurm_cmd)
+        scheduler.total_jobs += 1
 
 
 # ============================================================================
@@ -74,9 +75,8 @@ all_suites = [
 
 # Model configurations: (model_name, tensor_parallel_size)
 all_models = [
-    ("gpt-4o-2024-05-13", 1),  # API model, TP size ignored
+    ("GPT_4O", 1),  # API model, TP size ignored
     # ("azure/gpt-4o", 1),  # Azure model, TP size ignored
-    # ("gpt-4o-2024-08-06", 1),  # Useful for merged AgentDyn suites
     # ("meta-llama/Llama-3.1-8B-Instruct", 1),
     # ("meta-llama/Llama-3.1-70B-Instruct", 4),  # Large model needs more GPUs
     # ("Qwen/Qwen3-4B-Instruct-2507", 1),

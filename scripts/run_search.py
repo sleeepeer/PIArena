@@ -44,6 +44,7 @@ def run_search(dataset, backend_llm, attack, defense, attacker_llm=None,
         )
         print(slurm_cmd)
         os.system(slurm_cmd)
+        scheduler.total_jobs += 1
 
 
 # ============================================================================

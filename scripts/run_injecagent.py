@@ -25,6 +25,7 @@ def run(model, defense, name="test", seed=42):
         slurm_cmd = f'sbatch scripts/main_injecagent.sh "{model}" "{defense}" "{name}" "{seed}" "{log_file}"'
         print(slurm_cmd)
         os.system(slurm_cmd)
+        scheduler.total_jobs += 1
 
 
 # ============================================================================

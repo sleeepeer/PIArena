@@ -30,6 +30,7 @@ def run(dataset, backend_llm, attack, defense, attack_path=None, name="test", se
         slurm_cmd = f'sbatch scripts/main.sh "{dataset}" "{backend_llm}" "{attack}" "{defense}" "{attack_path}" "{name}" "{seed}" "{log_file}"'
         print(slurm_cmd)
         os.system(slurm_cmd)
+        scheduler.total_jobs += 1
 
 
 # ============================================================================
