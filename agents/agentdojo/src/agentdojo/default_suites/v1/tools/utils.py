@@ -1,10 +1,6 @@
 import datetime
-from agentdojo.base_tasks import BaseUserTask
-from agentdojo.default_suites.v1.shopping.task_suite import ShoppingEnvironment, task_suite
-from agentdojo.functions_runtime import FunctionCall
 from agentdojo.default_suites.v1.tools.types import File, Directory
 
-ShoppingUserTask = BaseUserTask[ShoppingEnvironment]
 
 def find_element(elements, condition):
     for element in elements:

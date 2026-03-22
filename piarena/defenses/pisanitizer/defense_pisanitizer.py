@@ -24,7 +24,7 @@ class PISanitizerDefense(BaseDefense):
     DEFAULT_CONFIG = {
         "smooth_win": 5,
         "max_gap": 10,
-        "threshold": 0.01,
+        "threshold": 0.015,
     }
 
     def __init__(self, config=None):

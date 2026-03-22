@@ -75,16 +75,17 @@ class QLoraModel(Model):
         
         processed_eval_prompt = f'{processed_eval_prompt}\n### Response: '
 
-        input_ids = self.tokenizer(processed_eval_prompt, return_tensors="pt").to("cuda")
+        device = self.ft_model.get_input_embeddings().weight.device
+        input_ids = self.tokenizer(processed_eval_prompt, return_tensors="pt").to(device)
 
         self.ft_model.eval()
         with torch.no_grad():
             output = self.tokenizer.decode(
                 self.ft_model.generate(
-                    **input_ids, 
-                    max_new_tokens=10, 
+                    **input_ids,
+                    max_new_tokens=10,
                     repetition_penalty=1.2
-                )[0], 
+                )[0],
                 skip_special_tokens=True
             ).replace(processed_eval_prompt, '')
         return output
@@ -93,12 +94,13 @@ class QLoraModel(Model):
         if self.ft_path == '' and 'DGDSGNH' not in msg:
             print('self.ft_model is None. Forward the query to the backend LLM')
             return self.backend_query(msg)
-        
+
         processed_eval_prompt = self.formatting_func(msg)
-        
+
         processed_eval_prompt = f'{processed_eval_prompt}\n'
 
-        input_ids = self.tokenizer(processed_eval_prompt, return_tensors="pt").to("cuda")
+        device = self.ft_model.get_input_embeddings().weight.device
+        input_ids = self.tokenizer(processed_eval_prompt, return_tensors="pt").to(device)
 
         self.ft_model.eval()
         with torch.no_grad():
@@ -130,7 +132,8 @@ class QLoraModel(Model):
         else:
             processed_eval_prompt = f"{msg} {self.tokenizer.eos_token}"
 
-        input_ids = self.tokenizer(processed_eval_prompt, return_tensors="pt").to("cuda")
+        device = self.base_model.get_input_embeddings().weight.device
+        input_ids = self.tokenizer(processed_eval_prompt, return_tensors="pt").to(device)
 
         self.base_model.eval()
         with torch.no_grad():

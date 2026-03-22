@@ -34,6 +34,22 @@ def get_openai_completion_with_retry(client, sleepsec=10, **kwargs) -> str:
             
             
 
+class OpenAIModel():
+    def __init__(self, model_name_or_path):
+        model_name = model_name_or_path.split("/")[-1]
+        self.model_name = model_name
+        openai_config_path = f"configs/openai_configs/{model_name}.yaml"
+        self.config = yaml.safe_load(open(openai_config_path, 'r'))
+        self.client = openai.OpenAI(api_key=self.config['api_key'])
+
+    def query(self, messages: Union[str, List[Dict[str, str]]], **kwargs):
+        return get_openai_completion_with_retry(
+            self.client,
+            messages=messages,
+            model=self.config['model'],
+        )
+
+
 class GoogleModel():
     def __init__(self, model_name_or_path):
         model_name = model_name_or_path.split("/")[-1]
@@ -84,6 +100,9 @@ class Model():
             openai_config_path = f"configs/azure_configs/{model_name}.yaml"
             api_key_index = 0
             self.model = load_gpt_model(openai_config_path, model_name, api_key_index)
+            self.tokenizer = None
+        elif "openai" in model_name_or_path.lower():
+            self.model = OpenAIModel(model_name_or_path)
             self.tokenizer = None
         elif "google" in model_name_or_path.lower():
             self.model = GoogleModel(model_name_or_path)
@@ -168,10 +187,12 @@ class Model():
         top_p: float = 0.95,
     ):
         if "azure" in self.model_name_or_path.lower():
-            generated_text = get_openai_completion_with_retry(self.model, 
+            generated_text = get_openai_completion_with_retry(self.model,
                 messages=messages,
-                model=self.model_name, 
-            )       
+                model=self.model_name,
+            )
+        elif "openai" in self.model_name_or_path.lower():
+            generated_text = self.model.query(messages)
         elif "google" in self.model_name_or_path.lower():
             generated_text = self.model.query(messages)
         elif "anthropic" in self.model_name_or_path.lower():
@@ -208,7 +229,7 @@ class Model():
         if not messages_list:
             return []
 
-        if any(provider in self.model_name_or_path.lower() for provider in ["azure", "google", "anthropic"]):
+        if any(provider in self.model_name_or_path.lower() for provider in ["azure", "openai", "google", "anthropic"]):
             return [
                 self.query(
                     messages=messages,
