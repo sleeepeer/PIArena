@@ -225,10 +225,6 @@ function computeDefenseLeaderboard(index, meta, { datasets, llm }) {
         byAttack[atk] = {
           utility: utilVals.length > 0 ? Math.round(utilVals.reduce((a,b) => a+b, 0) / utilVals.length) : null,
           asr: asrVals.length > 0 ? Math.round(asrVals.reduce((a,b) => a+b, 0) / asrVals.length) : null,
-          utilMin: utilVals.length > 0 ? Math.min(...utilVals) : null,
-          utilMax: utilVals.length > 0 ? Math.max(...utilVals) : null,
-          asrMin: asrVals.length > 0 ? Math.min(...asrVals) : null,
-          asrMax: asrVals.length > 0 ? Math.max(...asrVals) : null,
           count: vals.length,
         };
       }
@@ -712,9 +708,9 @@ const DEFENSE_TYPE_FILTERS = [
 ];
 
 const CHART_COLORS = {
-  direct: '#fca5a5',      // Red-300 (shallowest — easiest to defend)
-  combined: '#ef4444',    // Red-500 (medium)
-  strategy: '#991b1b',    // Red-900 (deepest — adaptive, hardest)
+  direct: '#fecdd3',      // Rose-200 (shallowest)
+  combined: '#fb7185',    // Rose-400 (medium)
+  strategy: '#f43f5e',    // Rose-500 (deepest — same as "Poor" in defense table)
   none: '#6ee7b7',
 };
 
@@ -806,16 +802,10 @@ const ScatterTooltipContent = ({ active, payload }) => {
         <div className="flex items-center gap-2">
           <span className="text-zinc-500">Utility:</span>
           <span className="font-mono font-semibold text-zinc-800">{data.utility !== null ? `${data.utility}%` : '—'}</span>
-          {data.utilMin != null && data.utilMax != null && data.utilMin !== data.utilMax && (
-            <span className="text-zinc-400 font-mono">({data.utilMin}–{data.utilMax})</span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-zinc-500">ASR:</span>
           <span className="font-mono font-semibold text-zinc-800">{data.asr !== null ? `${data.asr}%` : '—'}</span>
-          {data.asrMin != null && data.asrMax != null && data.asrMin !== data.asrMax && (
-            <span className="text-zinc-400 font-mono">({data.asrMin}–{data.asrMax})</span>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-zinc-500">Type:</span>
@@ -826,66 +816,6 @@ const ScatterTooltipContent = ({ active, payload }) => {
   );
 };
 
-// SVG overlay: per-defense ellipse showing min/max range across datasets
-const ScatterRangeOverlay = ({ scatterData, chartMargin }) => {
-  const ref = React.useRef(null);
-  const [size, setSize] = React.useState({ w: 0, h: 0 });
-
-  React.useEffect(() => {
-    if (!ref.current) return;
-    const parent = ref.current.parentElement;
-    if (!parent) return;
-    const obs = new ResizeObserver(entries => {
-      const { width: w, height: h } = entries[0].contentRect;
-      setSize({ w, h });
-    });
-    obs.observe(parent);
-    return () => obs.disconnect();
-  }, []);
-
-  // Only show ranges when there's actual spread (multiple datasets)
-  const rangeItems = scatterData.filter(d =>
-    d.asrMin !== null && d.asrMax !== null && d.utilMin !== null && d.utilMax !== null
-    && (d.asrMax - d.asrMin > 0 || d.utilMax - d.utilMin > 0)
-  );
-
-  if (rangeItems.length === 0 || size.w === 0) return <div ref={ref} />;
-
-  const m = chartMargin;
-  const plotW = size.w - m.left - m.right;
-  const plotH = size.h - m.top - m.bottom;
-  const toX = (v) => m.left + (v / 100) * plotW;
-  const toY = (v) => m.top + (1 - v / 100) * plotH;
-
-  return (
-    <div ref={ref} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-      <svg width={size.w} height={size.h} style={{ position: 'absolute', top: 0, left: 0 }}>
-        {rangeItems.map((d) => {
-          const cx = toX(d.asr);
-          const cy = toY(d.utility);
-          const rx = Math.max(Math.abs(toX(d.asrMax) - toX(d.asrMin)) / 2, 3);
-          const ry = Math.max(Math.abs(toY(d.utilMin) - toY(d.utilMax)) / 2, 3);
-          const color = SCATTER_DEFENSE_COLORS[d.type] || '#a1a1aa';
-          return (
-            <ellipse
-              key={d.name}
-              cx={cx}
-              cy={cy}
-              rx={rx}
-              ry={ry}
-              fill={color}
-              fillOpacity={0.08}
-              stroke={color}
-              strokeOpacity={0.30}
-              strokeWidth={1}
-              strokeDasharray="3 2"
-            />
-          );
-        })}
-      </svg>
-    </div>
-  );
-};
 
 // ── Main Leaderboard ──
 
@@ -979,22 +909,15 @@ const LeaderboardPage = () => {
     }));
   }, [filteredDefense]);
 
-  // Scatter plot data: X = ASR, Y = Utility for the selected attack, with per-dataset range
+  // Scatter plot data: X = ASR, Y = Utility for the selected attack
   const scatterData = useMemo(() => {
     return filteredDefense
-      .map(row => {
-        const atk = row.byAttack?.[scatterAttack];
-        return {
-          name: row.name,
-          type: row.id === 'none' ? 'No Defense' : (row.type || 'Baseline'),
-          asr: atk?.asr ?? null,
-          utility: atk?.utility ?? row.cleanUtil,
-          asrMin: atk?.asrMin ?? null,
-          asrMax: atk?.asrMax ?? null,
-          utilMin: atk?.utilMin ?? null,
-          utilMax: atk?.utilMax ?? null,
-        };
-      })
+      .map(row => ({
+        name: row.name,
+        type: row.id === 'none' ? 'No Defense' : (row.type || 'Baseline'),
+        asr: row.byAttack?.[scatterAttack]?.asr ?? null,
+        utility: row.byAttack?.[scatterAttack]?.utility ?? row.cleanUtil,
+      }))
       .filter(d => d.asr !== null && d.utility !== null);
   }, [filteredDefense, scatterAttack]);
 
@@ -1056,34 +979,28 @@ const LeaderboardPage = () => {
               </select>
             </div>
           </div>
-          <div style={{ position: 'relative' }}>
-            <ScatterRangeOverlay scatterData={scatterData} chartMargin={{ top: 10, right: 20, left: 35, bottom: 25 }} />
-            <ResponsiveContainer width="100%" height={300}>
-              <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-                <XAxis type="number" dataKey="asr" name="ASR" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'ASR (%) →', position: 'insideBottom', offset: -5, fontSize: 11, fill: '#a1a1aa' }} />
-                <YAxis type="number" dataKey="utility" name="Utility" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'Utility (%)', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11, fill: '#a1a1aa' }} />
-                <ZAxis range={[80, 80]} />
-                <Tooltip content={<ScatterTooltipContent />} />
-                <ReferenceLine x={50} stroke="#e4e4e7" strokeDasharray="3 3" />
-                <ReferenceLine y={50} stroke="#e4e4e7" strokeDasharray="3 3" />
-                <Scatter data={scatterData} shape="circle">
-                  {scatterData.map((entry, i) => (
-                    <RechartsCell key={i} fill={SCATTER_DEFENSE_COLORS[entry.type] || '#a1a1aa'} />
-                  ))}
-                </Scatter>
-              </ScatterChart>
-            </ResponsiveContainer>
-          </div>
+          <ResponsiveContainer width="100%" height={300}>
+            <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+              <XAxis type="number" dataKey="asr" name="ASR" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'ASR (%) →', position: 'insideBottom', offset: -5, fontSize: 11, fill: '#a1a1aa' }} />
+              <YAxis type="number" dataKey="utility" name="Utility" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'Utility (%)', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11, fill: '#a1a1aa' }} />
+              <ZAxis range={[80, 80]} />
+              <Tooltip content={<ScatterTooltipContent />} />
+              <ReferenceLine x={50} stroke="#e4e4e7" strokeDasharray="3 3" />
+              <ReferenceLine y={50} stroke="#e4e4e7" strokeDasharray="3 3" />
+              <Scatter data={scatterData} shape="circle">
+                {scatterData.map((entry, i) => (
+                  <RechartsCell key={i} fill={SCATTER_DEFENSE_COLORS[entry.type] || '#a1a1aa'} />
+                ))}
+              </Scatter>
+            </ScatterChart>
+          </ResponsiveContainer>
           <div className="flex justify-center gap-4 mt-2 text-[10px] font-medium text-zinc-400">
             {Object.entries(SCATTER_DEFENSE_COLORS).filter(([k]) => k !== 'Baseline').map(([k, c]) => (
               <span key={k} className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />{k}
               </span>
             ))}
-            <span className="flex items-center gap-1">
-              <span className="w-6 h-3 rounded-full border border-dashed border-zinc-300 bg-zinc-50" />Dataset range
-            </span>
           </div>
         </div>
 
