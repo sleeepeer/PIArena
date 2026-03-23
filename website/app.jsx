@@ -185,14 +185,21 @@ function lookup(index, dataset, attack, defense, llm) {
   return index[`${dataset}|${attack}|${defense}|${llm}`] || null;
 }
 
+const QA_DATASETS = ['squad_v2', 'dolly_qa', 'dolly_ie', 'dolly_summ'];
+const RAG_DATASETS = ['nq_rag', 'msmarco_rag', 'hotpotqa_rag'];
+
 function getDatasetKeysByGroup(meta, group) {
+  const allKeys = Object.keys(meta.datasets);
   if (group === 'all') {
-    return Object.keys(meta.datasets).filter(d => {
+    return allKeys.filter(d => {
       const g = meta.datasets[d]?.group;
       return g === 'short' || g === 'long';
     });
   }
-  return Object.keys(meta.datasets).filter(d => meta.datasets[d]?.group === group);
+  if (group === 'qa') return allKeys.filter(d => QA_DATASETS.includes(d));
+  if (group === 'rag') return allKeys.filter(d => RAG_DATASETS.includes(d));
+  if (group === 'long') return allKeys.filter(d => meta.datasets[d]?.group === 'long');
+  return allKeys.filter(d => meta.datasets[d]?.group === group);
 }
 
 function getCoreDatasetKeys(meta) {
@@ -697,8 +704,9 @@ const HomePage = ({ setActive }) => (
 
 const DATASET_GROUPS = [
   { id: 'all', label: 'All Datasets' },
-  { id: 'short', label: 'Short-Context' },
-  { id: 'long', label: 'Long-Context' },
+  { id: 'qa', label: 'QA' },
+  { id: 'rag', label: 'RAG' },
+  { id: 'long', label: 'Long Context' },
 ];
 
 const DEFENSE_TYPE_FILTERS = [
