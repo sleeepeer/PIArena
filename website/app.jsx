@@ -748,7 +748,6 @@ const DatasetChips = ({ meta, group, selected, onToggle, onSelectAll, onDeselect
   if (datasets.length === 0) return null;
   const allSelected = datasets.every(ds => selected.includes(ds));
 
-  // Build visible categories: only show categories that have datasets in current group
   const categories = DATASET_CATEGORIES
     .map(cat => ({
       label: cat.label,
@@ -757,42 +756,47 @@ const DatasetChips = ({ meta, group, selected, onToggle, onSelectAll, onDeselect
     .filter(cat => cat.items.length > 0);
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <button
-        onClick={() => allSelected ? onDeselectAll(datasets) : onSelectAll(datasets)}
-        className={cn(
-          "px-2.5 py-1 rounded-md text-xs font-semibold transition-all border",
-          allSelected
-            ? "border-zinc-300 bg-zinc-800 text-white"
-            : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100"
-        )}
-      >
-        {allSelected ? 'Deselect All' : 'Select All'}
-      </button>
-      {categories.map((cat, ci) => (
-        <React.Fragment key={cat.label}>
-          <span className="h-5 mx-1 border-l border-dashed border-zinc-300" />
-          <span className="text-[10px] text-zinc-400 font-medium mr-0.5">{cat.label}</span>
-          {cat.items.map(ds => {
-            const active = selected.includes(ds);
-            return (
-              <button
-                key={ds}
-                onClick={() => onToggle(ds)}
-                className={cn(
-                  "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
-                  active
-                    ? "bg-zinc-900 text-white shadow-sm"
-                    : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700"
-                )}
-              >
-                {meta.datasets[ds]?.display || ds}
-              </button>
-            );
-          })}
-        </React.Fragment>
+    <div className="flex flex-col gap-0">
+      {/* Select All row */}
+      <div className="flex items-center gap-2 pb-2">
+        <button
+          onClick={() => allSelected ? onDeselectAll(datasets) : onSelectAll(datasets)}
+          className={cn(
+            "px-3 py-1 rounded-full text-[11px] font-semibold transition-all tracking-wide",
+            allSelected
+              ? "bg-zinc-700 text-white"
+              : "bg-transparent text-zinc-400 border border-dashed border-zinc-300 hover:border-zinc-400 hover:text-zinc-600"
+          )}
+        >
+          {allSelected ? 'Deselect All' : 'Select All'}
+        </button>
+        <span className="text-[10px] text-zinc-400">{selected.filter(s => datasets.includes(s)).length}/{datasets.length} selected</span>
+      </div>
+      {/* Category rows separated by dashed lines */}
+      {categories.map((cat) => (
+        <div key={cat.label} className="flex items-center gap-1.5 border-t border-dashed border-zinc-200 pt-2 pb-2">
+          <span className="text-[10px] text-zinc-400 font-semibold uppercase tracking-wider w-16 shrink-0">{cat.label}</span>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {cat.items.map(ds => {
+              const active = selected.includes(ds);
+              return (
+                <button
+                  key={ds}
+                  onClick={() => onToggle(ds)}
+                  className={cn(
+                    "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
+                    active
+                      ? "bg-zinc-900 text-white shadow-sm"
+                      : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700"
+                  )}
+                >
+                  {meta.datasets[ds]?.display || ds}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       ))}
-      <span className="text-[10px] text-zinc-400 ml-1">{selected.filter(s => datasets.includes(s)).length}/{datasets.length}</span>
     </div>
   );
 };
