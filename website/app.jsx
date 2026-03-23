@@ -10,7 +10,7 @@ import {
 import {
   BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
-  ScatterChart, Scatter, ZAxis, Cell as RechartsCell, ReferenceLine
+  ScatterChart, Scatter, ZAxis, Cell as RechartsCell, ReferenceLine, Customized
 } from 'recharts';
 
 // ==========================================
@@ -696,7 +696,7 @@ const HomePage = ({ setActive }) => (
 // ── Leaderboard Primitives ──
 
 const DATASET_GROUPS = [
-  { id: 'all', label: 'All Core' },
+  { id: 'all', label: 'All Datasets' },
   { id: 'short', label: 'Short-Context' },
   { id: 'long', label: 'Long-Context' },
 ];
@@ -708,15 +708,16 @@ const DEFENSE_TYPE_FILTERS = [
 ];
 
 const CHART_COLORS = {
-  direct: '#3b82f6',
-  combined: '#f59e0b',
-  strategy: '#ef4444',
+  direct: '#10b981',      // Emerald (good-ish — easiest to defend)
+  combined: '#f59e0b',    // Amber (medium difficulty)
+  strategy: '#f43f5e',    // Rose (hardest — adaptive)
   none: '#6ee7b7',
 };
 
 const SCATTER_DEFENSE_COLORS = {
   Prevention: '#0ea5e9',
   Detection: '#8b5cf6',
+  'No Defense': '#ef4444',
   Baseline: '#a1a1aa',
 };
 
@@ -733,11 +734,25 @@ const FilterSelect = ({ label, value, onChange, options, className = '' }) => (
   </div>
 );
 
-const DatasetChips = ({ meta, group, selected, onToggle }) => {
+const DatasetChips = ({ meta, group, selected, onToggle, onSelectAll, onDeselectAll }) => {
   const datasets = getDatasetKeysByGroup(meta, group);
   if (datasets.length === 0) return null;
+  const allSelected = datasets.every(ds => selected.includes(ds));
+  const noneSelected = datasets.every(ds => !selected.includes(ds));
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap items-center gap-1.5">
+      <button
+        onClick={() => allSelected ? onDeselectAll(datasets) : onSelectAll(datasets)}
+        className={cn(
+          "px-2.5 py-1 rounded-md text-xs font-semibold transition-all border",
+          allSelected
+            ? "border-zinc-300 bg-zinc-800 text-white"
+            : "border-zinc-200 bg-white text-zinc-500 hover:bg-zinc-100"
+        )}
+      >
+        {allSelected ? 'Deselect All' : 'Select All'}
+      </button>
+      <span className="w-px h-5 bg-zinc-200 mx-0.5" />
       {datasets.map(ds => {
         const active = selected.includes(ds);
         return (
@@ -755,6 +770,7 @@ const DatasetChips = ({ meta, group, selected, onToggle }) => {
           </button>
         );
       })}
+      <span className="text-[10px] text-zinc-400 ml-1">{selected.filter(s => datasets.includes(s)).length}/{datasets.length}</span>
     </div>
   );
 };
@@ -800,10 +816,63 @@ const ScatterTooltipContent = ({ active, payload }) => {
   );
 };
 
+// Compute ellipse bounds per defense type for scatter plot
+function computeDefenseEllipses(data) {
+  const groups = {};
+  data.forEach(d => {
+    if (!groups[d.type]) groups[d.type] = [];
+    groups[d.type].push(d);
+  });
+  return Object.entries(groups)
+    .filter(([, pts]) => pts.length >= 2)
+    .map(([type, pts]) => {
+      const asrs = pts.map(p => p.asr);
+      const utils = pts.map(p => p.utility);
+      const cx = (Math.min(...asrs) + Math.max(...asrs)) / 2;
+      const cy = (Math.min(...utils) + Math.max(...utils)) / 2;
+      const rx = Math.max((Math.max(...asrs) - Math.min(...asrs)) / 2 + 4, 6);
+      const ry = Math.max((Math.max(...utils) - Math.min(...utils)) / 2 + 4, 6);
+      return { type, cx, cy, rx, ry };
+    });
+}
+
+const DefenseRangeEllipses = ({ xAxisMap, yAxisMap, scatterData }) => {
+  const xAxis = xAxisMap && Object.values(xAxisMap)[0];
+  const yAxis = yAxisMap && Object.values(yAxisMap)[0];
+  if (!xAxis || !yAxis) return null;
+  const ellipses = computeDefenseEllipses(scatterData);
+  return (
+    <g>
+      {ellipses.map(({ type, cx, cy, rx, ry }) => {
+        const pxCx = xAxis.scale(cx);
+        const pxCy = yAxis.scale(cy);
+        const pxRx = Math.abs(xAxis.scale(cx + rx) - pxCx);
+        const pxRy = Math.abs(yAxis.scale(cy + ry) - pxCy);
+        const color = SCATTER_DEFENSE_COLORS[type] || '#a1a1aa';
+        return (
+          <ellipse
+            key={type}
+            cx={pxCx}
+            cy={pxCy}
+            rx={pxRx}
+            ry={pxRy}
+            fill={color}
+            fillOpacity={0.06}
+            stroke={color}
+            strokeOpacity={0.3}
+            strokeWidth={1.5}
+            strokeDasharray="4 3"
+          />
+        );
+      })}
+    </g>
+  );
+};
+
 // ── Main Leaderboard ──
 
 const LeaderboardPage = () => {
-  const [sortKey, setSortKey] = useState('avg_asr');
+  const [sortKey, setSortKey] = useState('combined_asr');
   const [sortDir, setSortDir] = useState('asc');
 
   // Filter state
@@ -825,6 +894,18 @@ const LeaderboardPage = () => {
     setSelectedDatasets(prev => {
       const next = prev.includes(ds) ? prev.filter(d => d !== ds) : [...prev, ds];
       return next.length > 0 ? next : prev;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback((datasets) => {
+    setSelectedDatasets(prev => [...new Set([...prev, ...datasets])]);
+  }, []);
+
+  const handleDeselectAll = useCallback((datasets) => {
+    setSelectedDatasets(prev => {
+      const next = prev.filter(d => !datasets.includes(d));
+      // Keep at least one selected
+      return next.length > 0 ? next : [datasets[0]];
     });
   }, []);
 
@@ -862,11 +943,9 @@ const LeaderboardPage = () => {
   const sortedDefense = useMemo(() => {
     const getVal = (row) => {
       if (sortKey === 'clean_util') return row.cleanUtil ?? -1;
-      if (sortKey === 'rel_util') return row.relativeUtil ?? -1;
       if (sortKey === 'direct_asr') return row.byAttack?.direct?.asr ?? 999;
       if (sortKey === 'combined_asr') return row.byAttack?.combined?.asr ?? 999;
       if (sortKey === 'strategy_asr') return row.byAttack?.strategy?.asr ?? 999;
-      if (sortKey === 'avg_asr') return row.avgAsr ?? 999;
       return 0;
     };
     return [...filteredDefense].sort((a, b) => sortDir === 'asc' ? getVal(a) - getVal(b) : getVal(b) - getVal(a));
@@ -885,10 +964,9 @@ const LeaderboardPage = () => {
   // Scatter plot data: X = ASR, Y = Utility for the selected attack
   const scatterData = useMemo(() => {
     return filteredDefense
-      .filter(row => row.id !== 'none')
       .map(row => ({
         name: row.name,
-        type: row.type || 'Baseline',
+        type: row.id === 'none' ? 'No Defense' : (row.type || 'Baseline'),
         asr: row.byAttack?.[scatterAttack]?.asr ?? null,
         utility: row.byAttack?.[scatterAttack]?.utility ?? row.cleanUtil,
       }))
@@ -933,7 +1011,7 @@ const LeaderboardPage = () => {
             </div>
           </div>
         </div>
-        <DatasetChips meta={METADATA} group={datasetGroup} selected={selectedDatasets} onToggle={handleDatasetToggle} />
+        <DatasetChips meta={METADATA} group={datasetGroup} selected={selectedDatasets} onToggle={handleDatasetToggle} onSelectAll={handleSelectAll} onDeselectAll={handleDeselectAll} />
       </div>
 
       {/* ── Scatter + Bar side by side ── */}
@@ -962,6 +1040,7 @@ const LeaderboardPage = () => {
               <Tooltip content={<ScatterTooltipContent />} />
               <ReferenceLine x={50} stroke="#e4e4e7" strokeDasharray="3 3" />
               <ReferenceLine y={50} stroke="#e4e4e7" strokeDasharray="3 3" />
+              <Customized component={(props) => <DefenseRangeEllipses {...props} scatterData={scatterData} />} />
               <Scatter data={scatterData} shape="circle">
                 {scatterData.map((entry, i) => (
                   <RechartsCell key={i} fill={SCATTER_DEFENSE_COLORS[entry.type] || '#a1a1aa'} />
@@ -975,6 +1054,9 @@ const LeaderboardPage = () => {
                 <span className="w-2.5 h-2.5 rounded-full" style={{ background: c }} />{k}
               </span>
             ))}
+            <span className="flex items-center gap-1">
+              <span className="w-6 h-3 rounded-full border border-dashed border-zinc-300 bg-zinc-50" />Range
+            </span>
           </div>
         </div>
 
@@ -1026,12 +1108,10 @@ const LeaderboardPage = () => {
               <tr>
                 <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Defense</th>
                 <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Type</th>
-                <SortTh label="Clean Util." field="clean_util" sub="No Attack ↑" />
-                <SortTh label="Rel. Util." field="rel_util" sub="vs Baseline ↑" />
+                <SortTh label="Clean Utility" field="clean_util" sub="No Attack ↑" />
                 <SortTh label="Direct ASR" field="direct_asr" sub="↓ Better" />
                 <SortTh label="Combined ASR" field="combined_asr" sub="↓ Better" />
                 <SortTh label="Strategy ASR" field="strategy_asr" sub="Adaptive ↓" />
-                <SortTh label="Avg ASR" field="avg_asr" sub="↓ Better" />
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-50">
@@ -1040,20 +1120,9 @@ const LeaderboardPage = () => {
                   <td className="px-4 py-3 font-semibold text-zinc-900">{row.name}</td>
                   <td className="px-4 py-3"><Badge variant={safeLower(row.type)}>{row.type || 'Unknown'}</Badge></td>
                   <td className="px-4 py-3"><AsrCell value={row.cleanUtil} inverse /></td>
-                  <td className="px-4 py-3">
-                    {row.relativeUtil !== null ? (
-                      <span className={cn(
-                        "font-mono text-sm font-semibold",
-                        row.relativeUtil >= 90 ? "text-emerald-600" : row.relativeUtil >= 70 ? "text-amber-600" : "text-rose-600"
-                      )}>
-                        {row.relativeUtil}%
-                      </span>
-                    ) : <span className="text-zinc-300 text-xs">—</span>}
-                  </td>
                   <td className="px-4 py-3"><AsrCell value={row.byAttack?.direct?.asr} /></td>
                   <td className="px-4 py-3"><AsrCell value={row.byAttack?.combined?.asr} /></td>
                   <td className="px-4 py-3"><AsrCell value={row.byAttack?.strategy?.asr} /></td>
-                  <td className="px-4 py-3"><AsrCell value={row.avgAsr} /></td>
                 </tr>
               ))}
             </tbody>
@@ -1083,7 +1152,7 @@ const LeaderboardPage = () => {
                 <tr className="border-b border-zinc-100">
                   {agentDatasets.map(ds => (
                     <React.Fragment key={ds}>
-                      <th className="px-3 py-1 text-center text-[10px] text-zinc-400 border-l border-zinc-100">Util ↑</th>
+                      <th className="px-3 py-1 text-center text-[10px] text-zinc-400 border-l border-zinc-100">Utility ↑</th>
                       <th className="px-3 py-1 text-center text-[10px] text-zinc-400">ASR ↓</th>
                     </React.Fragment>
                   ))}
