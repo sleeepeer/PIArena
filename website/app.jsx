@@ -1,12 +1,16 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import METADATA from './data/metadata.json';
 import RESULTS from './data/results.json';
 import {
   Github, Trophy, Shield, Terminal, Database, Layers, ArrowRight,
   AlertTriangle, CheckCircle, Crosshair, Code, BarChart, Server, Link,
   ChevronRight, ExternalLink, Copy, Zap, ArrowUpDown, Menu, X,
-  FileText, Box, Target, Cpu, Filter, ChevronDown
+  FileText, Box, Target, Cpu, Filter, ChevronDown, Grid3X3
 } from 'lucide-react';
+import {
+  BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip, Legend,
+  ResponsiveContainer, Cell, CartesianGrid
+} from 'recharts';
 
 // ==========================================
 // 📊 DATA LAYER
@@ -180,24 +184,32 @@ function lookup(index, dataset, attack, defense, llm) {
   return index[`${dataset}|${attack}|${defense}|${llm}`] || null;
 }
 
-function getCoreDatasetKeys(meta) {
-  return Object.keys(meta.datasets).filter(d => {
-    const group = meta.datasets[d]?.group;
-    return group === 'short' || group === 'long';
-  });
+function getDatasetKeysByGroup(meta, group) {
+  if (group === 'all') {
+    return Object.keys(meta.datasets).filter(d => {
+      const g = meta.datasets[d]?.group;
+      return g === 'short' || g === 'long';
+    });
+  }
+  return Object.keys(meta.datasets).filter(d => meta.datasets[d]?.group === group);
 }
 
-function computeDefenseLeaderboard(index, meta) {
+function getCoreDatasetKeys(meta) {
+  return getDatasetKeysByGroup(meta, 'all');
+}
+
+const ATTACK_TYPES = ['none', 'direct', 'combined', 'strategy'];
+const ALL_ATTACK_TYPES = ['direct', 'combined', 'strategy', 'gcg'];
+
+function computeDefenseLeaderboard(index, meta, { datasets, llm }) {
   const defenseKeys = Object.keys(meta.defenses);
-  const datasetKeys = getCoreDatasetKeys(meta);
-  const attacks = ['none', 'direct', 'combined', 'strategy'];
-  const llm = 'qwen3-4b';
+  const attacks = ATTACK_TYPES;
 
   return defenseKeys.map(defKey => {
     const defMeta = meta.defenses[defKey];
     const byAttack = {};
     attacks.forEach(atk => {
-      const vals = datasetKeys.map(ds => lookup(index, ds, atk, defKey, llm)).filter(Boolean);
+      const vals = datasets.map(ds => lookup(index, ds, atk, defKey, llm)).filter(Boolean);
       if (vals.length > 0) {
         const utilVals = vals.map(v => v.utility).filter(v => v !== null);
         const asrVals = vals.map(v => v.asr).filter(v => v !== null);
@@ -208,42 +220,74 @@ function computeDefenseLeaderboard(index, meta) {
         };
       }
     });
-    return { id: defKey, name: defMeta.display, type: defMeta.type, byAttack };
+    // Compute average ASR across attack types (excluding 'none')
+    const atkAsrs = ['direct', 'combined', 'strategy'].map(a => byAttack[a]?.asr).filter(v => v !== null && v !== undefined);
+    const avgAsr = atkAsrs.length > 0 ? Math.round(atkAsrs.reduce((a,b) => a+b, 0) / atkAsrs.length) : null;
+    return { id: defKey, name: defMeta.display, type: defMeta.type, byAttack, avgAsr };
   });
 }
 
-function computeLLMLeaderboard(index, meta) {
+function computeLLMLeaderboard(index, meta, { datasets, defense }) {
   const llmKeys = Object.keys(meta.llms);
-  const dataset = 'squad_v2';
+  const attacks = ATTACK_TYPES;
 
   return llmKeys.map(llmKey => {
     const llmMeta = meta.llms[llmKey];
-    const noAtk = lookup(index, dataset, 'none', 'none', llmKey);
-    const direct = lookup(index, dataset, 'direct', 'none', llmKey);
-    return {
-      id: llmKey,
-      name: llmMeta.display,
-      access: llmMeta.access,
-      utilNoAtk: noAtk?.utility ?? null,
-      asrDirect: direct?.asr ?? null,
-    };
+    const byAttack = {};
+    attacks.forEach(atk => {
+      const vals = datasets.map(ds => lookup(index, ds, atk, defense, llmKey)).filter(Boolean);
+      if (vals.length > 0) {
+        const utilVals = vals.map(v => v.utility).filter(v => v !== null);
+        const asrVals = vals.map(v => v.asr).filter(v => v !== null);
+        byAttack[atk] = {
+          utility: utilVals.length > 0 ? Math.round(utilVals.reduce((a,b) => a+b, 0) / utilVals.length) : null,
+          asr: asrVals.length > 0 ? Math.round(asrVals.reduce((a,b) => a+b, 0) / asrVals.length) : null,
+          count: vals.length,
+        };
+      }
+    });
+    const utilNoAtk = byAttack.none?.utility ?? null;
+    return { id: llmKey, name: llmMeta.display, access: llmMeta.access, byAttack, utilNoAtk };
   }).filter(r => r.utilNoAtk !== null);
 }
 
-function computeAgentLeaderboard(index, meta) {
-  const agentDatasets = ['wasp', 'opi', 'sep'];
-  const defenses = ['none', 'pisanitizer', 'secalign', 'datafilter', 'promptarmor'];
+function computeHeatmapData(index, meta, { rowDim, colDim, metric, fixedAttack, fixedDefense, fixedLLM, fixedDataset }) {
+  const getKeys = (dim) => {
+    if (dim === 'defense') return Object.keys(meta.defenses);
+    if (dim === 'attack') return ALL_ATTACK_TYPES;
+    if (dim === 'llm') return Object.keys(meta.llms);
+    if (dim === 'dataset') return getCoreDatasetKeys(meta);
+    return [];
+  };
+  const getName = (dim, key) => {
+    if (dim === 'defense') return meta.defenses[key]?.display || key;
+    if (dim === 'attack') return meta.attacks[key]?.display || key;
+    if (dim === 'llm') return meta.llms[key]?.display || key;
+    if (dim === 'dataset') return meta.datasets[key]?.display || key;
+    return key;
+  };
 
-  return defenses.map(defKey => {
-    const row = { id: defKey, name: meta.defenses[defKey]?.display || defKey };
-    agentDatasets.forEach(ds => {
-      const llm = ds === 'wasp' ? 'gpt-4o' : 'qwen3-4b';
-      const r = lookup(index, ds, 'default', defKey, llm);
-      row[`${ds}_util`] = r?.utility ?? null;
-      row[`${ds}_asr`] = r?.asr ?? null;
+  const rowKeys = getKeys(rowDim);
+  const colKeys = getKeys(colDim);
+
+  const resolve = (rKey, cKey) => {
+    const dims = { defense: fixedDefense, attack: fixedAttack, llm: fixedLLM, dataset: fixedDataset };
+    dims[rowDim] = rKey;
+    dims[colDim] = cKey;
+    return lookup(index, dims.dataset, dims.attack, dims.defense, dims.llm);
+  };
+
+  const rows = rowKeys.map(rKey => {
+    const cells = {};
+    colKeys.forEach(cKey => {
+      const r = resolve(rKey, cKey);
+      cells[cKey] = r ? (metric === 'utility' ? r.utility : r.asr) : null;
     });
-    return row;
+    return { key: rKey, name: getName(rowDim, rKey), cells };
   });
+
+  const colNames = colKeys.map(k => ({ key: k, name: getName(colDim, k) }));
+  return { rows, colNames };
 }
 
 // ==========================================
@@ -679,17 +723,156 @@ const HomePage = ({ setActive }) => (
 // 🏆 LEADERBOARD
 // ==========================================
 
+// ── Filter UI Primitives ──
+
+const DATASET_GROUPS = [
+  { id: 'all', label: 'All Core' },
+  { id: 'short', label: 'Short-Context' },
+  { id: 'long', label: 'Long-Context' },
+  { id: 'agent', label: 'Agent' },
+  { id: 'external', label: 'External' },
+];
+
+const CHART_COLORS = {
+  direct: '#3b82f6',
+  combined: '#f59e0b',
+  strategy: '#ef4444',
+  gcg: '#8b5cf6',
+  none: '#6ee7b7',
+};
+
+const CHART_BAR_NAMES = {
+  direct: 'Direct',
+  combined: 'Combined',
+  strategy: 'Strategy',
+  gcg: 'GCG',
+};
+
+const FilterSelect = ({ label, value, onChange, options, className = '' }) => (
+  <div className={cn("flex flex-col gap-1", className)}>
+    <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">{label}</label>
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="text-sm font-medium text-zinc-800 bg-white border border-zinc-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2371717a%22%20stroke-width%3D%222%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_8px_center] pr-7"
+    >
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  </div>
+);
+
+const DatasetChips = ({ meta, group, selected, onToggle }) => {
+  const datasets = getDatasetKeysByGroup(meta, group);
+  if (datasets.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {datasets.map(ds => {
+        const active = selected.includes(ds);
+        return (
+          <button
+            key={ds}
+            onClick={() => onToggle(ds)}
+            className={cn(
+              "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
+              active
+                ? "bg-zinc-900 text-white shadow-sm"
+                : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700"
+            )}
+          >
+            {meta.datasets[ds]?.display || ds}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+const ChartTooltip = ({ active, payload, label, metric }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white rounded-lg border border-zinc-200 shadow-lg px-3 py-2 text-xs">
+      <p className="font-semibold text-zinc-900 mb-1">{label}</p>
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full" style={{ background: p.fill || p.color }} />
+          <span className="text-zinc-500">{p.name}:</span>
+          <span className="font-mono font-semibold text-zinc-800">{p.value !== null && p.value !== undefined ? `${p.value}%` : '—'}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ── Heatmap Cell Color ──
+
+function heatColor(value, metric) {
+  if (value === null || value === undefined) return 'bg-zinc-50 text-zinc-300';
+  if (metric === 'utility') {
+    if (value > 65) return 'bg-emerald-100 text-emerald-800';
+    if (value > 40) return 'bg-amber-100 text-amber-800';
+    return 'bg-rose-100 text-rose-800';
+  }
+  // ASR: low is good
+  if (value < 20) return 'bg-emerald-100 text-emerald-800';
+  if (value < 50) return 'bg-amber-100 text-amber-800';
+  return 'bg-rose-100 text-rose-800';
+}
+
+// ── Main Leaderboard ──
+
 const LeaderboardPage = () => {
   const [view, setView] = useState('defense');
   const [sortKey, setSortKey] = useState('utility');
   const [sortDir, setSortDir] = useState('desc');
 
+  // Filter state
+  const [datasetGroup, setDatasetGroup] = useState('all');
+  const [selectedDatasets, setSelectedDatasets] = useState(() => getDatasetKeysByGroup(METADATA, 'all'));
+  const [selectedLLM, setSelectedLLM] = useState('qwen3-4b');
+  const [selectedDefense, setSelectedDefense] = useState('none');
+  const [chartMetric, setChartMetric] = useState('asr');
+
+  // Heatmap state
+  const [heatRowDim, setHeatRowDim] = useState('defense');
+  const [heatColDim, setHeatColDim] = useState('dataset');
+  const [heatMetric, setHeatMetric] = useState('asr');
+  const [heatAttack, setHeatAttack] = useState('combined');
+  const [heatDefense, setHeatDefense] = useState('none');
+  const [heatLLM, setHeatLLM] = useState('qwen3-4b');
+
   const normalizedResults = useMemo(() => normalizeResults(RESULTS), []);
   const index = useMemo(() => buildIndex(normalizedResults), [normalizedResults]);
-  const defenseBoard = useMemo(() => computeDefenseLeaderboard(index, METADATA), [index]);
-  const llmBoard = useMemo(() => computeLLMLeaderboard(index, METADATA), [index]);
-  const agentBoard = useMemo(() => computeAgentLeaderboard(index, METADATA), [index]);
-  const coreDatasetCount = useMemo(() => getCoreDatasetKeys(METADATA).length, []);
+
+  // When group changes, reset selected datasets to all in that group
+  const handleGroupChange = useCallback((group) => {
+    setDatasetGroup(group);
+    setSelectedDatasets(getDatasetKeysByGroup(METADATA, group));
+  }, []);
+
+  const handleDatasetToggle = useCallback((ds) => {
+    setSelectedDatasets(prev => {
+      const next = prev.includes(ds) ? prev.filter(d => d !== ds) : [...prev, ds];
+      return next.length > 0 ? next : prev; // Don't allow empty selection
+    });
+  }, []);
+
+  // Computed boards
+  const defenseBoard = useMemo(
+    () => computeDefenseLeaderboard(index, METADATA, { datasets: selectedDatasets, llm: selectedLLM }),
+    [index, selectedDatasets, selectedLLM]
+  );
+  const llmBoard = useMemo(
+    () => computeLLMLeaderboard(index, METADATA, { datasets: selectedDatasets, defense: selectedDefense }),
+    [index, selectedDatasets, selectedDefense]
+  );
+  const heatData = useMemo(
+    () => computeHeatmapData(index, METADATA, {
+      rowDim: heatRowDim, colDim: heatColDim, metric: heatMetric,
+      fixedAttack: heatAttack, fixedDefense: heatDefense, fixedLLM: heatLLM,
+      fixedDataset: selectedDatasets[0] || 'squad_v2',
+    }),
+    [index, heatRowDim, heatColDim, heatMetric, heatAttack, heatDefense, heatLLM, selectedDatasets]
+  );
 
   const toggleSort = (key) => { if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortKey(key); setSortDir('asc'); } };
 
@@ -712,28 +895,114 @@ const LeaderboardPage = () => {
       if (sortKey === 'direct_asr') return row.byAttack?.direct?.asr ?? 999;
       if (sortKey === 'combined_asr') return row.byAttack?.combined?.asr ?? 999;
       if (sortKey === 'strategy_asr') return row.byAttack?.strategy?.asr ?? 999;
+      if (sortKey === 'avg_asr') return row.avgAsr ?? 999;
       return 0;
     };
     return [...defenseBoard].sort((a, b) => sortDir === 'asc' ? getVal(a) - getVal(b) : getVal(b) - getVal(a));
   }, [defenseBoard, sortKey, sortDir]);
 
   const sortedLLM = useMemo(() => {
-    const getVal = (row) => sortKey === 'asrDirect' ? (row.asrDirect ?? 999) : (row.utilNoAtk ?? -1);
+    const getVal = (row) => {
+      if (sortKey === 'utilNoAtk') return row.utilNoAtk ?? -1;
+      if (sortKey === 'direct_asr') return row.byAttack?.direct?.asr ?? 999;
+      if (sortKey === 'combined_asr') return row.byAttack?.combined?.asr ?? 999;
+      if (sortKey === 'strategy_asr') return row.byAttack?.strategy?.asr ?? 999;
+      return 0;
+    };
     return [...llmBoard].sort((a, b) => sortDir === 'asc' ? getVal(a) - getVal(b) : getVal(b) - getVal(a));
   }, [llmBoard, sortKey, sortDir]);
 
+  // Chart data
+  const defenseChartData = useMemo(() => {
+    return defenseBoard.map(row => {
+      const d = { name: row.name };
+      if (chartMetric === 'asr') {
+        d.direct = row.byAttack?.direct?.asr ?? null;
+        d.combined = row.byAttack?.combined?.asr ?? null;
+        d.strategy = row.byAttack?.strategy?.asr ?? null;
+      } else {
+        d.none = row.byAttack?.none?.utility ?? null;
+        d.direct = row.byAttack?.direct?.utility ?? null;
+        d.combined = row.byAttack?.combined?.utility ?? null;
+        d.strategy = row.byAttack?.strategy?.utility ?? null;
+      }
+      return d;
+    });
+  }, [defenseBoard, chartMetric]);
+
+  const llmChartData = useMemo(() => {
+    return llmBoard.map(row => {
+      const d = { name: row.name };
+      if (chartMetric === 'asr') {
+        d.direct = row.byAttack?.direct?.asr ?? null;
+        d.combined = row.byAttack?.combined?.asr ?? null;
+        d.strategy = row.byAttack?.strategy?.asr ?? null;
+      } else {
+        d.none = row.byAttack?.none?.utility ?? null;
+        d.direct = row.byAttack?.direct?.utility ?? null;
+        d.combined = row.byAttack?.combined?.utility ?? null;
+        d.strategy = row.byAttack?.strategy?.utility ?? null;
+      }
+      return d;
+    });
+  }, [llmBoard, chartMetric]);
+
+  const llmOptions = useMemo(() => Object.entries(METADATA.llms).map(([k, v]) => ({ value: k, label: v.display })), []);
+  const defenseOptions = useMemo(() => Object.entries(METADATA.defenses).map(([k, v]) => ({ value: k, label: v.display })), []);
+  const attackOptions = useMemo(() => ALL_ATTACK_TYPES.map(k => ({ value: k, label: METADATA.attacks[k]?.display || k })), []);
+
+  const heatDimOptions = [
+    { value: 'defense', label: 'Defense' },
+    { value: 'attack', label: 'Attack' },
+    { value: 'llm', label: 'LLM' },
+    { value: 'dataset', label: 'Dataset' },
+  ];
+
   return (
     <div className="max-w-6xl mx-auto px-5 py-12">
-      <div className="mb-10">
+      <div className="mb-8">
         <h2 className="text-3xl font-bold text-zinc-900 tracking-tight">Evaluation Results</h2>
-        <p className="mt-3 text-lg text-zinc-500 max-w-3xl">Systematic assessment of defense mechanisms and LLMs. All defense results averaged across {coreDatasetCount} datasets.</p>
+        <p className="mt-2 text-lg text-zinc-500 max-w-3xl">
+          Systematic assessment of defense mechanisms and LLMs across {selectedDatasets.length} dataset{selectedDatasets.length !== 1 ? 's' : ''}.
+        </p>
       </div>
 
+      {/* ── Filter Bar ── */}
+      <div className="bg-white rounded-xl border border-zinc-200 p-4 mb-6">
+        <div className="flex flex-wrap items-end gap-4 mb-3">
+          <FilterSelect
+            label="Dataset Group"
+            value={datasetGroup}
+            onChange={handleGroupChange}
+            options={DATASET_GROUPS.map(g => ({ value: g.id, label: g.label }))}
+          />
+          {view === 'defense' && (
+            <FilterSelect label="Backend LLM" value={selectedLLM} onChange={setSelectedLLM} options={llmOptions} />
+          )}
+          {view === 'llm' && (
+            <FilterSelect label="Defense" value={selectedDefense} onChange={setSelectedDefense} options={defenseOptions} />
+          )}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">Chart Metric</label>
+            <div className="flex gap-1 bg-zinc-100 p-0.5 rounded-lg">
+              {[{ id: 'asr', label: 'ASR' }, { id: 'utility', label: 'Utility' }].map(m => (
+                <button key={m.id} onClick={() => setChartMetric(m.id)}
+                  className={cn("px-3 py-1 rounded-md text-xs font-semibold transition-all", chartMetric === m.id ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700")}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <DatasetChips meta={METADATA} group={datasetGroup} selected={selectedDatasets} onToggle={handleDatasetToggle} />
+      </div>
+
+      {/* ── View Tabs ── */}
       <div className="flex gap-1 bg-zinc-100 p-1 rounded-xl w-fit mb-8">
         {[
-          { id: 'defense', label: 'Defense Robustness', icon: <Shield size={14} />, defSort: 'utility', defDir: 'desc' },
-          { id: 'llm', label: 'LLM Vulnerability', icon: <Cpu size={14} />, defSort: 'asrDirect', defDir: 'asc' },
-          { id: 'agent', label: 'Agent & External', icon: <Box size={14} />, defSort: null },
+          { id: 'defense', label: 'Defense Overview', icon: <Shield size={14} />, defSort: 'utility', defDir: 'desc' },
+          { id: 'llm', label: 'LLM Comparison', icon: <Cpu size={14} />, defSort: 'utilNoAtk', defDir: 'desc' },
+          { id: 'heatmap', label: 'Heatmap', icon: <Grid3X3 size={14} />, defSort: null },
         ].map(t => (
           <button key={t.id} onClick={() => { setView(t.id); if (t.defSort) { setSortKey(t.defSort); setSortDir(t.defDir || 'asc'); }}}
             className={cn("inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all", view === t.id ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700")}>
@@ -742,120 +1011,232 @@ const LeaderboardPage = () => {
         ))}
       </div>
 
-      {/* Defense Table */}
+      {/* ════════════════ Defense Overview ════════════════ */}
       {view === 'defense' && (
-        <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-zinc-100 bg-zinc-50/50 flex flex-wrap justify-between items-center gap-2">
-            <div>
-              <h3 className="font-bold text-zinc-900 text-sm">State-of-the-Art Defenses</h3>
-              <p className="text-xs text-zinc-500">Averaged across {coreDatasetCount} datasets · Qwen3-4B-Instruct backend</p>
-            </div>
-            <div className="flex gap-4 text-[10px] font-medium text-zinc-400">
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Good</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Medium</span>
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500" /> Poor</span>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-zinc-100 bg-zinc-50/30">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Defense</th>
-                  <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Type</th>
-                  <SortTh label="Utility" field="utility" sub="No Attack ↑" />
-                  <SortTh label="Direct ASR" field="direct_asr" sub="↓ Better" />
-                  <SortTh label="Combined ASR" field="combined_asr" sub="↓ Better" />
-                  <SortTh label="Strategy ASR" field="strategy_asr" sub="Adaptive ↓" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-50">
-                {sortedDefense.map(row => (
-                  <tr key={row.id} className={cn("hover:bg-zinc-50/50 transition-colors", row.id === 'none' && "bg-zinc-50/50")}>
-                    <td className="px-4 py-3 font-semibold text-zinc-900">{row.name}</td>
-                    <td className="px-4 py-3"><Badge variant={safeLower(row.type)}>{row.type || 'Unknown'}</Badge></td>
-                    <td className="px-4 py-3"><AsrCell value={row.byAttack?.none?.utility} inverse /></td>
-                    <td className="px-4 py-3"><AsrCell value={row.byAttack?.direct?.asr} /></td>
-                    <td className="px-4 py-3"><AsrCell value={row.byAttack?.combined?.asr} /></td>
-                    <td className="px-4 py-3"><AsrCell value={row.byAttack?.strategy?.asr} /></td>
-                  </tr>
+        <>
+          {/* Chart */}
+          <div className="bg-white rounded-xl border border-zinc-200 p-5 mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-zinc-900 text-sm">
+                Defense {chartMetric === 'asr' ? 'ASR' : 'Utility'} Comparison
+              </h3>
+              <div className="flex gap-3 text-[10px] font-medium text-zinc-400">
+                {Object.entries(CHART_BAR_NAMES).map(([k, v]) => (
+                  <span key={k} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS[k] }} />{v}
+                  </span>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={320}>
+              <RechartsBarChart data={defenseChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#71717a' }} interval={0} angle={-20} textAnchor="end" height={60} />
+                <YAxis tick={{ fontSize: 11, fill: '#71717a' }} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                <Tooltip content={<ChartTooltip metric={chartMetric} />} />
+                {chartMetric === 'utility' && <Bar dataKey="none" name="No Attack" fill={CHART_COLORS.none} radius={[2,2,0,0]} />}
+                <Bar dataKey="direct" name="Direct" fill={CHART_COLORS.direct} radius={[2,2,0,0]} />
+                <Bar dataKey="combined" name="Combined" fill={CHART_COLORS.combined} radius={[2,2,0,0]} />
+                <Bar dataKey="strategy" name="Strategy" fill={CHART_COLORS.strategy} radius={[2,2,0,0]} />
+              </RechartsBarChart>
+            </ResponsiveContainer>
           </div>
-        </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-100 bg-zinc-50/50 flex flex-wrap justify-between items-center gap-2">
+              <div>
+                <h3 className="font-bold text-zinc-900 text-sm">State-of-the-Art Defenses</h3>
+                <p className="text-xs text-zinc-500">
+                  {selectedDatasets.length > 1 ? `Averaged across ${selectedDatasets.length} datasets` : METADATA.datasets[selectedDatasets[0]]?.display || selectedDatasets[0]}
+                  {' · '}{METADATA.llms[selectedLLM]?.display || selectedLLM} backend
+                </p>
+              </div>
+              <div className="flex gap-4 text-[10px] font-medium text-zinc-400">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Good</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-400" /> Medium</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-rose-500" /> Poor</span>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-zinc-100 bg-zinc-50/30">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Defense</th>
+                    <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Type</th>
+                    <SortTh label="Utility" field="utility" sub="No Attack ↑" />
+                    <SortTh label="Direct ASR" field="direct_asr" sub="↓ Better" />
+                    <SortTh label="Combined ASR" field="combined_asr" sub="↓ Better" />
+                    <SortTh label="Strategy ASR" field="strategy_asr" sub="Adaptive ↓" />
+                    <SortTh label="Avg ASR" field="avg_asr" sub="↓ Better" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {sortedDefense.map(row => (
+                    <tr key={row.id} className={cn("hover:bg-zinc-50/50 transition-colors", row.id === 'none' && "bg-zinc-50/50")}>
+                      <td className="px-4 py-3 font-semibold text-zinc-900">{row.name}</td>
+                      <td className="px-4 py-3"><Badge variant={safeLower(row.type)}>{row.type || 'Unknown'}</Badge></td>
+                      <td className="px-4 py-3"><AsrCell value={row.byAttack?.none?.utility} inverse /></td>
+                      <td className="px-4 py-3"><AsrCell value={row.byAttack?.direct?.asr} /></td>
+                      <td className="px-4 py-3"><AsrCell value={row.byAttack?.combined?.asr} /></td>
+                      <td className="px-4 py-3"><AsrCell value={row.byAttack?.strategy?.asr} /></td>
+                      <td className="px-4 py-3"><AsrCell value={row.avgAsr} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
-      {/* LLM Table */}
+      {/* ════════════════ LLM Comparison ════════════════ */}
       {view === 'llm' && (
-        <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden max-w-3xl">
-          <div className="px-5 py-4 border-b border-zinc-100 bg-zinc-50/50">
-            <h3 className="font-bold text-zinc-900 text-sm">LLM Vulnerability (SQuAD v2, No External Defense)</h3>
-            <p className="text-xs text-zinc-500">Direct prompt injection ASR across different backend LLMs</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-b border-zinc-100 bg-zinc-50/30">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Backend LLM</th>
-                  <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Access</th>
-                  <SortTh label="Direct ASR" field="asrDirect" sub="↓ Better" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-50">
-                {sortedLLM.map(row => (
-                  <tr key={row.id} className="hover:bg-zinc-50/50 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-zinc-900">{row.name}</td>
-                    <td className="px-4 py-3"><Badge variant={safeLower(row.access)}>{row.access || 'Unknown'}</Badge></td>
-                    <td className="px-4 py-3"><AsrCell value={row.asrDirect} /></td>
-                  </tr>
+        <>
+          {/* Chart */}
+          <div className="bg-white rounded-xl border border-zinc-200 p-5 mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-zinc-900 text-sm">
+                LLM {chartMetric === 'asr' ? 'ASR' : 'Utility'} Comparison
+              </h3>
+              <div className="flex gap-3 text-[10px] font-medium text-zinc-400">
+                {chartMetric === 'utility' && (
+                  <span className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS.none }} />No Attack
+                  </span>
+                )}
+                {Object.entries(CHART_BAR_NAMES).map(([k, v]) => (
+                  <span key={k} className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full" style={{ background: CHART_COLORS[k] }} />{v}
+                  </span>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={320}>
+              <RechartsBarChart data={llmChartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#71717a' }} interval={0} angle={-20} textAnchor="end" height={60} />
+                <YAxis tick={{ fontSize: 11, fill: '#71717a' }} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                <Tooltip content={<ChartTooltip metric={chartMetric} />} />
+                {chartMetric === 'utility' && <Bar dataKey="none" name="No Attack" fill={CHART_COLORS.none} radius={[2,2,0,0]} />}
+                <Bar dataKey="direct" name="Direct" fill={CHART_COLORS.direct} radius={[2,2,0,0]} />
+                <Bar dataKey="combined" name="Combined" fill={CHART_COLORS.combined} radius={[2,2,0,0]} />
+                <Bar dataKey="strategy" name="Strategy" fill={CHART_COLORS.strategy} radius={[2,2,0,0]} />
+              </RechartsBarChart>
+            </ResponsiveContainer>
           </div>
-        </div>
+
+          {/* Table */}
+          <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-100 bg-zinc-50/50">
+              <h3 className="font-bold text-zinc-900 text-sm">LLM Vulnerability</h3>
+              <p className="text-xs text-zinc-500">
+                {selectedDatasets.length > 1 ? `Averaged across ${selectedDatasets.length} datasets` : METADATA.datasets[selectedDatasets[0]]?.display || selectedDatasets[0]}
+                {' · '}{METADATA.defenses[selectedDefense]?.display || 'No Defense'}
+              </p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="border-b border-zinc-100 bg-zinc-50/30">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Backend LLM</th>
+                    <th className="px-4 py-3 text-left font-semibold text-zinc-500 text-xs uppercase tracking-wider">Access</th>
+                    <SortTh label="Utility" field="utilNoAtk" sub="No Attack ↑" />
+                    <SortTh label="Direct ASR" field="direct_asr" sub="↓ Better" />
+                    <SortTh label="Combined ASR" field="combined_asr" sub="↓ Better" />
+                    <SortTh label="Strategy ASR" field="strategy_asr" sub="Adaptive ↓" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-50">
+                  {sortedLLM.map(row => (
+                    <tr key={row.id} className="hover:bg-zinc-50/50 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-zinc-900">{row.name}</td>
+                      <td className="px-4 py-3"><Badge variant={safeLower(row.access)}>{row.access || 'Unknown'}</Badge></td>
+                      <td className="px-4 py-3"><AsrCell value={row.utilNoAtk} inverse /></td>
+                      <td className="px-4 py-3"><AsrCell value={row.byAttack?.direct?.asr} /></td>
+                      <td className="px-4 py-3"><AsrCell value={row.byAttack?.combined?.asr} /></td>
+                      <td className="px-4 py-3"><AsrCell value={row.byAttack?.strategy?.asr} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
-      {/* Agent Table */}
-      {view === 'agent' && (
-        <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
-          <div className="px-5 py-4 border-b border-zinc-100 bg-zinc-50/50">
-            <h3 className="font-bold text-zinc-900 text-sm">Defense on External Benchmarks</h3>
-            <p className="text-xs text-zinc-500">PIArena enables plug-and-play defense integration into existing benchmarks</p>
+      {/* ════════════════ Heatmap ════════════════ */}
+      {view === 'heatmap' && (
+        <>
+          <div className="bg-white rounded-xl border border-zinc-200 p-4 mb-6">
+            <div className="flex flex-wrap items-end gap-4">
+              <FilterSelect label="Rows" value={heatRowDim} onChange={v => { setHeatRowDim(v); if (v === heatColDim) setHeatColDim(heatRowDim); }} options={heatDimOptions} />
+              <FilterSelect label="Columns" value={heatColDim} onChange={v => { setHeatColDim(v); if (v === heatRowDim) setHeatRowDim(heatColDim); }} options={heatDimOptions} />
+              <FilterSelect label="Metric" value={heatMetric} onChange={setHeatMetric} options={[{ value: 'asr', label: 'ASR' }, { value: 'utility', label: 'Utility' }]} />
+              {heatRowDim !== 'attack' && heatColDim !== 'attack' && (
+                <FilterSelect label="Attack" value={heatAttack} onChange={setHeatAttack} options={attackOptions} />
+              )}
+              {heatRowDim !== 'defense' && heatColDim !== 'defense' && (
+                <FilterSelect label="Defense" value={heatDefense} onChange={setHeatDefense} options={defenseOptions} />
+              )}
+              {heatRowDim !== 'llm' && heatColDim !== 'llm' && (
+                <FilterSelect label="LLM" value={heatLLM} onChange={setHeatLLM} options={llmOptions} />
+              )}
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-zinc-50/30">
-                <tr className="border-b border-zinc-100">
-                  <th className="px-4 py-2 text-left font-semibold text-zinc-500 text-xs uppercase" rowSpan={2}>Defense</th>
-                  <th className="px-4 py-2 text-center font-semibold text-zinc-500 text-xs uppercase border-l border-zinc-100" colSpan={2}>WASP (Agent)</th>
-                  <th className="px-4 py-2 text-center font-semibold text-zinc-500 text-xs uppercase border-l border-zinc-100" colSpan={2}>OPI</th>
-                  <th className="px-4 py-2 text-center font-semibold text-zinc-500 text-xs uppercase border-l border-zinc-100" colSpan={2}>SEP</th>
-                </tr>
-                <tr className="border-b border-zinc-100">
-                  <th className="px-3 py-1 text-center text-[10px] text-zinc-400 border-l border-zinc-100">Util ↑</th>
-                  <th className="px-3 py-1 text-center text-[10px] text-zinc-400">ASR ↓</th>
-                  <th className="px-3 py-1 text-center text-[10px] text-zinc-400 border-l border-zinc-100">Util ↑</th>
-                  <th className="px-3 py-1 text-center text-[10px] text-zinc-400">ASR ↓</th>
-                  <th className="px-3 py-1 text-center text-[10px] text-zinc-400 border-l border-zinc-100">Util ↑</th>
-                  <th className="px-3 py-1 text-center text-[10px] text-zinc-400">ASR ↓</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-50">
-                {agentBoard.map(row => (
-                  <tr key={row.id} className={cn("hover:bg-zinc-50/50", row.id === 'none' && "bg-zinc-50/50")}>
-                    <td className="px-4 py-2.5 font-semibold text-zinc-900">{row.name}</td>
-                    {['wasp', 'opi', 'sep'].map(ds => (
-                      <React.Fragment key={ds}>
-                        <td className="px-3 py-2.5 text-center font-mono text-xs text-zinc-600 border-l border-zinc-50">{row[`${ds}_util`] != null ? `${row[`${ds}_util`]}%` : '—'}</td>
-                        <td className="px-3 py-2.5 text-center"><AsrCell value={row[`${ds}_asr`]} /></td>
-                      </React.Fragment>
+
+          <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
+            <div className="px-5 py-4 border-b border-zinc-100 bg-zinc-50/50 flex flex-wrap justify-between items-center gap-2">
+              <div>
+                <h3 className="font-bold text-zinc-900 text-sm">
+                  {heatDimOptions.find(o => o.value === heatRowDim)?.label} vs {heatDimOptions.find(o => o.value === heatColDim)?.label}
+                </h3>
+                <p className="text-xs text-zinc-500">
+                  {heatMetric === 'asr' ? 'Attack Success Rate (lower is better)' : 'Utility (higher is better)'}
+                </p>
+              </div>
+              <div className="flex gap-2 text-[10px] font-medium text-zinc-400">
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-200" /> Good</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-200" /> Medium</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-100 border border-rose-200" /> Poor</span>
+              </div>
+            </div>
+            <div className="overflow-x-auto p-4">
+              <table className="text-xs">
+                <thead>
+                  <tr>
+                    <th className="px-3 py-2 text-left font-semibold text-zinc-500 uppercase tracking-wider text-[10px] sticky left-0 bg-white z-10" />
+                    {heatData.colNames.map(col => (
+                      <th key={col.key} className="px-2 py-2 text-center font-semibold text-zinc-600 text-[10px] min-w-[60px] whitespace-nowrap">
+                        {col.name}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {heatData.rows.map(row => (
+                    <tr key={row.key}>
+                      <td className="px-3 py-1.5 font-semibold text-zinc-800 whitespace-nowrap sticky left-0 bg-white z-10">{row.name}</td>
+                      {heatData.colNames.map(col => {
+                        const val = row.cells[col.key];
+                        return (
+                          <td key={col.key} className="px-1 py-1">
+                            <div className={cn(
+                              "rounded px-2 py-1.5 text-center font-mono font-semibold min-w-[50px]",
+                              heatColor(val, heatMetric)
+                            )}>
+                              {val !== null && val !== undefined ? `${val}%` : '—'}
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
