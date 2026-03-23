@@ -225,6 +225,10 @@ function computeDefenseLeaderboard(index, meta, { datasets, llm }) {
         byAttack[atk] = {
           utility: utilVals.length > 0 ? Math.round(utilVals.reduce((a,b) => a+b, 0) / utilVals.length) : null,
           asr: asrVals.length > 0 ? Math.round(asrVals.reduce((a,b) => a+b, 0) / asrVals.length) : null,
+          utilMin: utilVals.length > 0 ? Math.min(...utilVals) : null,
+          utilMax: utilVals.length > 0 ? Math.max(...utilVals) : null,
+          asrMin: asrVals.length > 0 ? Math.min(...asrVals) : null,
+          asrMax: asrVals.length > 0 ? Math.max(...asrVals) : null,
           count: vals.length,
         };
       }
@@ -802,10 +806,16 @@ const ScatterTooltipContent = ({ active, payload }) => {
         <div className="flex items-center gap-2">
           <span className="text-zinc-500">Utility:</span>
           <span className="font-mono font-semibold text-zinc-800">{data.utility !== null ? `${data.utility}%` : '—'}</span>
+          {data.utilMin != null && data.utilMax != null && data.utilMin !== data.utilMax && (
+            <span className="text-zinc-400 font-mono">({data.utilMin}–{data.utilMax})</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-zinc-500">ASR:</span>
           <span className="font-mono font-semibold text-zinc-800">{data.asr !== null ? `${data.asr}%` : '—'}</span>
+          {data.asrMin != null && data.asrMax != null && data.asrMin !== data.asrMax && (
+            <span className="text-zinc-400 font-mono">({data.asrMin}–{data.asrMax})</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <span className="text-zinc-500">Type:</span>
@@ -816,28 +826,8 @@ const ScatterTooltipContent = ({ active, payload }) => {
   );
 };
 
-// Compute ellipse bounds per defense type for scatter plot overlay
-function computeDefenseEllipses(data) {
-  const groups = {};
-  data.forEach(d => {
-    if (!groups[d.type]) groups[d.type] = [];
-    groups[d.type].push(d);
-  });
-  return Object.entries(groups)
-    .filter(([, pts]) => pts.length >= 2)
-    .map(([type, pts]) => {
-      const asrs = pts.map(p => p.asr);
-      const utils = pts.map(p => p.utility);
-      const cx = (Math.min(...asrs) + Math.max(...asrs)) / 2;
-      const cy = (Math.min(...utils) + Math.max(...utils)) / 2;
-      const rx = Math.max((Math.max(...asrs) - Math.min(...asrs)) / 2 + 5, 5);
-      const ry = Math.max((Math.max(...utils) - Math.min(...utils)) / 2 + 5, 5);
-      return { type, cx, cy, rx, ry };
-    });
-}
-
-// SVG overlay positioned absolutely on top of the ResponsiveContainer
-const ScatterEllipseOverlay = ({ scatterData, chartMargin, width, height }) => {
+// SVG overlay: per-defense ellipse showing min/max range across datasets
+const ScatterRangeOverlay = ({ scatterData, chartMargin }) => {
   const ref = React.useRef(null);
   const [size, setSize] = React.useState({ w: 0, h: 0 });
 
@@ -853,36 +843,42 @@ const ScatterEllipseOverlay = ({ scatterData, chartMargin, width, height }) => {
     return () => obs.disconnect();
   }, []);
 
-  const ellipses = computeDefenseEllipses(scatterData);
-  if (ellipses.length === 0 || size.w === 0) return <div ref={ref} />;
+  // Only show ranges when there's actual spread (multiple datasets)
+  const rangeItems = scatterData.filter(d =>
+    d.asrMin !== null && d.asrMax !== null && d.utilMin !== null && d.utilMax !== null
+    && (d.asrMax - d.asrMin > 0 || d.utilMax - d.utilMin > 0)
+  );
 
-  // Chart plot area = total size minus margins
+  if (rangeItems.length === 0 || size.w === 0) return <div ref={ref} />;
+
   const m = chartMargin;
   const plotW = size.w - m.left - m.right;
   const plotH = size.h - m.top - m.bottom;
-
-  // Domain is [0, 100] for both axes
   const toX = (v) => m.left + (v / 100) * plotW;
-  const toY = (v) => m.top + (1 - v / 100) * plotH; // Y inverted
+  const toY = (v) => m.top + (1 - v / 100) * plotH;
 
   return (
     <div ref={ref} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
       <svg width={size.w} height={size.h} style={{ position: 'absolute', top: 0, left: 0 }}>
-        {ellipses.map(({ type, cx, cy, rx, ry }) => {
-          const color = SCATTER_DEFENSE_COLORS[type] || '#a1a1aa';
+        {rangeItems.map((d) => {
+          const cx = toX(d.asr);
+          const cy = toY(d.utility);
+          const rx = Math.max(Math.abs(toX(d.asrMax) - toX(d.asrMin)) / 2, 3);
+          const ry = Math.max(Math.abs(toY(d.utilMin) - toY(d.utilMax)) / 2, 3);
+          const color = SCATTER_DEFENSE_COLORS[d.type] || '#a1a1aa';
           return (
             <ellipse
-              key={type}
-              cx={toX(cx)}
-              cy={toY(cy)}
-              rx={(rx / 100) * plotW}
-              ry={(ry / 100) * plotH}
+              key={d.name}
+              cx={cx}
+              cy={cy}
+              rx={rx}
+              ry={ry}
               fill={color}
-              fillOpacity={0.07}
+              fillOpacity={0.08}
               stroke={color}
-              strokeOpacity={0.35}
-              strokeWidth={1.5}
-              strokeDasharray="4 3"
+              strokeOpacity={0.30}
+              strokeWidth={1}
+              strokeDasharray="3 2"
             />
           );
         })}
@@ -983,15 +979,22 @@ const LeaderboardPage = () => {
     }));
   }, [filteredDefense]);
 
-  // Scatter plot data: X = ASR, Y = Utility for the selected attack
+  // Scatter plot data: X = ASR, Y = Utility for the selected attack, with per-dataset range
   const scatterData = useMemo(() => {
     return filteredDefense
-      .map(row => ({
-        name: row.name,
-        type: row.id === 'none' ? 'No Defense' : (row.type || 'Baseline'),
-        asr: row.byAttack?.[scatterAttack]?.asr ?? null,
-        utility: row.byAttack?.[scatterAttack]?.utility ?? row.cleanUtil,
-      }))
+      .map(row => {
+        const atk = row.byAttack?.[scatterAttack];
+        return {
+          name: row.name,
+          type: row.id === 'none' ? 'No Defense' : (row.type || 'Baseline'),
+          asr: atk?.asr ?? null,
+          utility: atk?.utility ?? row.cleanUtil,
+          asrMin: atk?.asrMin ?? null,
+          asrMax: atk?.asrMax ?? null,
+          utilMin: atk?.utilMin ?? null,
+          utilMax: atk?.utilMax ?? null,
+        };
+      })
       .filter(d => d.asr !== null && d.utility !== null);
   }, [filteredDefense, scatterAttack]);
 
@@ -1054,7 +1057,7 @@ const LeaderboardPage = () => {
             </div>
           </div>
           <div style={{ position: 'relative' }}>
-            <ScatterEllipseOverlay scatterData={scatterData} chartMargin={{ top: 10, right: 20, left: 35, bottom: 25 }} />
+            <ScatterRangeOverlay scatterData={scatterData} chartMargin={{ top: 10, right: 20, left: 35, bottom: 25 }} />
             <ResponsiveContainer width="100%" height={300}>
               <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
@@ -1079,7 +1082,7 @@ const LeaderboardPage = () => {
               </span>
             ))}
             <span className="flex items-center gap-1">
-              <span className="w-6 h-3 rounded-full border border-dashed border-zinc-300 bg-zinc-50" />Range
+              <span className="w-6 h-3 rounded-full border border-dashed border-zinc-300 bg-zinc-50" />Dataset range
             </span>
           </div>
         </div>
