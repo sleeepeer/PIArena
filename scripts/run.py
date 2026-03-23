@@ -10,7 +10,7 @@ def run(dataset, backend_llm, attack, defense, attack_path=None, name="test", se
     attack_name = attack_path.split('/')[-1].split('.')[0] if attack_path else attack
 
     log_file = f"./logs/main_logs/{name}/{dataset_name}-{backend_llm_name}-{attack_name}-{defense}-{seed}.txt"
-
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
     attack_path_arg = f" --attack_path {attack_path}" if attack_path else ""
     cmd = (
         f"python3 -u main.py"

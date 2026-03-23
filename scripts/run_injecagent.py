@@ -8,6 +8,7 @@ def run(model, defense, name="test", seed=42):
     model_name = model.replace('/', '-')
 
     log_file = f"./logs/injecagent_logs/{name}/{model_name}-{defense}-{seed}.txt"
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     cmd = (
         f"python3 -u main_injecagent.py"

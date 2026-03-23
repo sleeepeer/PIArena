@@ -20,6 +20,7 @@ def run_search(dataset, backend_llm, attack, defense, attacker_llm=None,
     dataset_name = dataset.split('/')[-1].split('.')[0]
 
     log_file = f"./logs/search_logs/{name}/{dataset_name}-{backend_llm_name}-{attack}-{defense}-{seed}.txt"
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     cmd = (
         f"python3 -u main_search.py"

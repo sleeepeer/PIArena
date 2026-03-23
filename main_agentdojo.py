@@ -1,30 +1,26 @@
 """
 AgentDojo Benchmark Evaluation with PIArena Defenses
 
-This script evaluates prompt injection defenses on the vendored AgentDojo
-benchmark integration in PIArena. The vendored benchmark tree includes both
-the original AgentDojo suites and the merged AgentDyn suites.
+This script evaluates PIArena defenses on the AgentDojo benchmark for
+prompt injection attacks in tool-integrated LLM agents.
 
 Usage:
-    # Benign utility on a classic AgentDojo suite
+    # Benign utility (no attack) with GPT-4o (OpenAI API)
     python main_agentdojo.py --model gpt-4o-2024-05-13 --attack none
 
-    # PIArena defense on a classic AgentDojo suite
+    # With Azure OpenAI (uses configs/azure_configs/gpt-4o.yaml)
     python main_agentdojo.py --model azure/gpt-4o --attack tool_knowledge --defense datafilter
 
-    # PIArena defense on a merged AgentDyn suite
-    python main_agentdojo.py --model gpt-4o-2024-08-06 --attack important_instructions --defense datafilter --suite shopping
-
-    # Local HuggingFace model (starts vLLM server automatically)
+    # With HuggingFace model (starts vLLM server automatically)
     python main_agentdojo.py --model meta-llama/Llama-3.1-8B-Instruct --attack tool_knowledge --defense datafilter
 
     # Specify tensor parallel size for large models
     python main_agentdojo.py --model meta-llama/Llama-3.1-70B-Instruct --tensor_parallel_size 4 --attack none
 
 Setup:
-    AgentDojo is vendored with PIArena-specific modifications and merged AgentDyn extensions.
+    AgentDojo is included as a git submodule with PIArena modifications pre-applied.
     Initialize with: git submodule update --init --recursive
-    Then install: cd agents/agentdojo && pip install -e .
+    Then install: cd agentdojo && pip install -e .
 """
 
 import os
@@ -34,6 +30,7 @@ import signal
 import subprocess
 import argparse
 import yaml
+from dataclasses import dataclass
 from datetime import datetime
 
 
@@ -41,44 +38,20 @@ AGENTDOJO_PATH = "agents/agentdojo"
 AZURE_CONFIG_DIR = "configs/azure_configs"
 
 # Known API model prefixes (don't need vLLM server)
-API_MODEL_PREFIXES = ["gpt", "claude", "gemini", "command-r", "google/"]
-API_MODEL_NAMES = {
-    "qwen3-max",
-    "qwen/qwen-2.5-72b-instruct",
-    "qwen/qwen3-235b-a22b-2507",
-    "meta-llama/llama-3.3-70b-instruct",
-}
+API_MODEL_PREFIXES = ["gpt", "claude", "gemini", "command-r"]
 
-PIARENA_DEFENSES = {
-    "datafilter",
-    "pisanitizer",
-    "promptguard",
-    "datasentinel",
-    "piguard",
-    "attentiontracker",
-    "promptarmor",
-    "promptlocate",
-    "secalign",
+SECALIGN_BASE_MODELS = {
+    "8b": "meta-llama/Llama-3.1-8B-Instruct",
+    "70b": "meta-llama/Llama-3.3-70B-Instruct",
 }
-
-BENCHMARK_DEFENSES = {
-    "tool_filter",
-    "transformers_pi_detector",
-    "piguard_detector",
-    "prompt_guard_2_detector",
-    "spotlighting_with_delimiting",
-    "repeat_user_prompt",
-}
+SECALIGN_MAX_LORA_RANK = 64
+SECALIGN_MAX_MODEL_LEN = 24576
 
 # Map Azure model names to AgentDojo model enums
 # AgentDojo CLI expects specific enum values, not deployment names
 AZURE_TO_AGENTDOJO_MODEL = {
-    "gpt-5.1-2025-11-13": "GPT_5_1_2025_11_13",
     "gpt-4o": "GPT_4O_2024_05_13",
-    "gpt-4o-2024-08-06": "GPT_4O_2024_08_06",
     "gpt-4o-2024-05-13": "GPT_4O_2024_05_13",
-    "gpt-5-mini": "GPT_5_MINI_2025_08_07",
-    "gpt-5-mini-2025-08-07": "GPT_5_MINI_2025_08_07",
     "gpt-4o-mini": "GPT_4O_MINI_2024_07_18",
     "gpt-4o-mini-2024-07-18": "GPT_4O_MINI_2024_07_18",
     "gpt-4-0125-preview": "GPT_4_0125_PREVIEW",
@@ -89,6 +62,19 @@ AZURE_TO_AGENTDOJO_MODEL = {
 }
 
 
+@dataclass(frozen=True)
+class VLLMServeConfig:
+    model: str
+    served_model_name: str
+    tokenizer: str | None = None
+    lora_adapter: str | None = None
+    max_model_len: int = 16384
+
+    @property
+    def is_secalign(self) -> bool:
+        return self.lora_adapter is not None
+
+
 def is_azure_model(model: str) -> bool:
     """Check if model is an Azure model (azure/<model> format)."""
     return model.lower().startswith("azure/")
@@ -97,12 +83,53 @@ def is_azure_model(model: str) -> bool:
 def is_api_model(model: str) -> bool:
     """Check if model is an API-based model (OpenAI, Anthropic, Google, Cohere)."""
     model_lower = model.lower()
-    return model_lower in API_MODEL_NAMES or any(model_lower.startswith(prefix) for prefix in API_MODEL_PREFIXES)
+    return any(model_lower.startswith(prefix) for prefix in API_MODEL_PREFIXES)
 
 
 def is_huggingface_model(model: str) -> bool:
     """Check if model is a HuggingFace model (needs vLLM server)."""
     return not is_azure_model(model) and not is_api_model(model)
+
+
+def is_secalign_model(model: str) -> bool:
+    """Check if model refers to a SecAlign adapter/checkpoint."""
+    return "secalign" in model.lower()
+
+
+def infer_secalign_base_model(model: str) -> str | None:
+    """Infer SecAlign's base model from a known adapter/checkpoint name."""
+    lowered = model.lower()
+    if "_SecAlign" in model:
+        return model.split("_SecAlign", 1)[0]
+    if "meta-secalign-8b" in lowered:
+        return SECALIGN_BASE_MODELS["8b"]
+    if "meta-secalign-70b" in lowered:
+        return SECALIGN_BASE_MODELS["70b"]
+    return None
+
+
+def resolve_vllm_serve_config(model: str) -> VLLMServeConfig:
+    """Resolve how a HuggingFace model should be served through vLLM."""
+    if not is_secalign_model(model):
+        return VLLMServeConfig(
+            model=model,
+            served_model_name=model,
+        )
+
+    base_model = infer_secalign_base_model(model) or os.getenv("SECALIGN_BASE_MODEL")
+    if base_model is None:
+        raise ValueError(
+            "Could not infer the base model for SecAlign checkpoint "
+            f"'{model}'. Use a known SecAlign name or set SECALIGN_BASE_MODEL."
+        )
+
+    return VLLMServeConfig(
+        model=base_model,
+        served_model_name=model,
+        tokenizer=model,
+        lora_adapter=model,
+        max_model_len=SECALIGN_MAX_MODEL_LEN,
+    )
 
 
 def load_azure_config(model_name: str) -> dict:
@@ -125,38 +152,55 @@ def load_azure_config(model_name: str) -> dict:
 
 
 def check_agentdojo_installed():
-    """Check if the vendored benchmark tree exists."""
+    """Check if AgentDojo is cloned and installed."""
     if not os.path.exists(AGENTDOJO_PATH):
         raise FileNotFoundError(
             f"AgentDojo not found at '{AGENTDOJO_PATH}'. Please run:\n"
             "  git submodule update --init --recursive\n"
-            "  cd agents/agentdojo && pip install -e ."
+            "  cd agentdojo && pip install -e ."
         )
 
-    benchmark_entrypoint = os.path.join(AGENTDOJO_PATH, "src", "agentdojo", "scripts", "benchmark.py")
-    if not os.path.exists(benchmark_entrypoint):
-        raise FileNotFoundError(f"Benchmark entrypoint not found: {benchmark_entrypoint}")
+    try:
+        import agentdojo  # noqa: F401
+    except ImportError:
+        raise ImportError(
+            "AgentDojo not installed as package. Please run:\n"
+            "  cd agentdojo && pip install -e ."
+        )
 
 
 def start_vllm_server(model: str, tensor_parallel_size: int, port: int = 8000) -> tuple[subprocess.Popen, str]:
     """Start vLLM server for HuggingFace model."""
+    serve_config = resolve_vllm_serve_config(model)
     log_dir = "results/agent_evaluations/agentdojo/vllm_logs"
     os.makedirs(log_dir, exist_ok=True)
 
     log_file = os.path.join(log_dir, f"vllm_server_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
 
     cmd = [
-        "vllm", "serve", model,
+        "vllm", "serve", serve_config.model,
         "--dtype", "auto",
         "--host", "0.0.0.0",
         "--port", str(port),
         "--tensor-parallel-size", str(tensor_parallel_size),
         "--gpu-memory-utilization", "0.8",
-        "--max-model-len", "16384",
+        "--max-model-len", str(serve_config.max_model_len),
     ]
+
+    if serve_config.tokenizer:
+        cmd.extend(["--tokenizer", serve_config.tokenizer])
+    if serve_config.lora_adapter:
+        cmd.extend([
+            "--enable-lora",
+            "--max-lora-rank", str(SECALIGN_MAX_LORA_RANK),
+            "--lora-modules", f"{serve_config.served_model_name}={serve_config.lora_adapter}",
+        ])
 
     print(f"[vLLM] Starting server: {' '.join(cmd)}")
     print(f"[vLLM] Log file: {log_file}")
+    if serve_config.is_secalign:
+        print(f"[vLLM] SecAlign adapter: {serve_config.lora_adapter}")
+        print(f"[vLLM] SecAlign base model: {serve_config.model}")
 
     with open(log_file, 'w') as f:
         process = subprocess.Popen(
@@ -224,7 +268,7 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
     env["PYTHONPATH"] = os.path.dirname(os.path.abspath(__file__)) + ":" + env.get("PYTHONPATH", "")
     env["PIARENA_PATH"] = os.path.dirname(os.path.abspath(__file__))
 
-    if args.defense in PIARENA_DEFENSES:
+    if args.defense != "none":
         env["PIARENA_DEFENSE"] = args.defense
 
     # Set Azure environment variables if needed
@@ -242,9 +286,10 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
     cmd = [sys.executable, "-m", "agentdojo.scripts.benchmark"]
 
     if model_type == "huggingface":
+        serve_config = resolve_vllm_serve_config(args.model)
         # Use local vLLM server (uppercase LOCAL for AgentDojo CLI enum)
         cmd.extend(["--model", "LOCAL"])
-        cmd.extend(["--model-id", args.model])
+        cmd.extend(["--model-id", serve_config.served_model_name])
         cmd.extend(["--tool-delimiter", "input"])
     elif model_type == "azure":
         # Map Azure deployment name to AgentDojo model enum
@@ -264,15 +309,12 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
         cmd.extend(["--attack", args.attack])
 
     # Add defense
-    if args.defense in PIARENA_DEFENSES:
+    if args.defense != "none":
         cmd.extend(["--defense", "piarena"])
-    elif args.defense in BENCHMARK_DEFENSES:
-        cmd.extend(["--defense", args.defense])
 
-    # Add suite(s) if specified
-    if args.suites:
-        for suite in args.suites:
-            cmd.extend(["-s", suite])
+    # Add suite if specified
+    if args.suite:
+        cmd.extend(["-s", args.suite])
 
     # Add user tasks if specified
     if args.user_tasks:
@@ -286,7 +328,7 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
 
     print(f"\n[Run] Executing: {' '.join(cmd)}")
     print(f"[Run] Working directory: {AGENTDOJO_PATH}/src")
-    if args.defense in PIARENA_DEFENSES:
+    if args.defense != "none":
         print(f"[Run] PIARENA_DEFENSE={args.defense}")
     print()
 
@@ -309,10 +351,6 @@ def main(args):
     if is_azure_model(args.model):
         model_type = "azure"
         azure_model_name = args.model.split("/", 1)[1]  # Extract model name after "azure/"
-    elif args.model_backend == "api":
-        model_type = "api"
-    elif args.model_backend == "huggingface":
-        model_type = "huggingface"
     elif is_api_model(args.model):
         model_type = "api"
     else:
@@ -320,18 +358,23 @@ def main(args):
 
     # Print configuration
     print("\n" + "="*60)
-    print("AgentDojo / AgentDyn Benchmark")
+    print("AgentDojo Benchmark")
     print("="*60)
     print(f"  Model:    {args.model}")
     if model_type == "azure":
         print(f"  Type:     Azure OpenAI ({azure_model_name})")
     elif model_type == "huggingface":
-        print(f"  Type:     HuggingFace (vLLM)")
+        serve_config = resolve_vllm_serve_config(args.model)
+        if serve_config.is_secalign:
+            print(f"  Type:     HuggingFace (vLLM + SecAlign LoRA)")
+            print(f"  Base:     {serve_config.model}")
+        else:
+            print(f"  Type:     HuggingFace (vLLM)")
     else:
         print(f"  Type:     API")
     print(f"  Attack:   {args.attack}")
     print(f"  Defense:  {args.defense}")
-    print(f"  Suite:    {', '.join(args.suites) if args.suites else 'all'}")
+    print(f"  Suite:    {args.suite or 'all'}")
     if model_type == "huggingface":
         print(f"  TP Size:  {args.tensor_parallel_size}")
     print("="*60)
@@ -367,29 +410,22 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="AgentDojo / AgentDyn Benchmark Evaluation")
+    parser = argparse.ArgumentParser(description="AgentDojo Benchmark Evaluation")
     parser.add_argument("--model", type=str, default="gpt-4o-2024-05-13",
-                        help="Model: HuggingFace path (for local vLLM), API model id, or merged AgentDyn provider id, "
+                        help="Model: HuggingFace path (e.g., meta-llama/Llama-3.1-8B-Instruct), "
+                             "API model (e.g., gpt-4o-2024-05-13), "
                              "or Azure (e.g., azure/gpt-4o)")
-    parser.add_argument("--model_backend", type=str, default="auto",
-                        choices=["auto", "api", "huggingface"],
-                        help="Override model routing when an identifier could be interpreted as either a remote API "
-                             "model or a local HuggingFace model")
     parser.add_argument("--attack", type=str, default="tool_knowledge",
                         choices=["none", "direct", "important_instructions", "tool_knowledge", "injecagent"],
                         help="Attack type to evaluate (use 'none' for benign utility)")
     parser.add_argument("--defense", type=str, default="none",
                         choices=["none", "datafilter", "pisanitizer", "promptguard",
                                  "datasentinel", "piguard", "attentiontracker",
-                                 "promptarmor", "promptlocate", "secalign",
-                                 "tool_filter", "transformers_pi_detector",
-                                 "piguard_detector", "prompt_guard_2_detector",
-                                 "spotlighting_with_delimiting", "repeat_user_prompt"],
-                        help="Defense to evaluate. PIArena defenses are routed through the vendored piarena adapter; "
-                             "AgentDojo and AgentDyn native defenses are passed through directly")
-    parser.add_argument("--suite", "-s", dest="suites", type=str, nargs="*", default=None,
-                        help="Specific suite(s) to evaluate (default: all). "
-                             "Valid suites: workspace, slack, travel, banking, shopping, github, dailylife")
+                                 "promptarmor", "promptlocate"],
+                        help="Defense to evaluate")
+    parser.add_argument("--suite", "-s", type=str, default=None,
+                        choices=["workspace", "slack", "travel", "banking"],
+                        help="Specific suite to evaluate (default: all)")
     parser.add_argument("--user_tasks", "-ut", type=str, nargs="*", default=None,
                         help="Specific user tasks to evaluate")
     parser.add_argument("--tensor_parallel_size", type=int, default=1,

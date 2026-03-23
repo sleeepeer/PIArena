@@ -16,6 +16,7 @@ def run(model, attack, defense, suites=None, tensor_parallel_size=1, name="test"
         suite_args = ""
 
     log_file = f"./logs/agentdojo_logs/{name}/{model_name}-{attack_suffix}-{defense}{suite_suffix}.txt"
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
 
     cmd = (
         f"python3 -u main_agentdojo.py"
@@ -44,7 +45,7 @@ def run(model, attack, defense, suites=None, tensor_parallel_size=1, name="test"
 
 name = "agentdojo"
 gpus = [0]
-processes_per_gpu = 2
+processes_per_gpu = 1
 
 scheduler = GPUScheduler(gpus, processes_per_gpu)
 
@@ -70,16 +71,15 @@ all_defenses = [
 
 # Suites to evaluate. Use None for all suites, or a list of specific suites.
 # Examples:
-#   suites = None                                           # all suites (AgentDojo + AgentDyn)
-#   suites = ["workspace", "slack", "travel", "banking"]    # AgentDojo
-#   suites = ["shopping", "github", "dailylife"]            # AgentDyn
-suites = ["workspace", "slack", "travel", "banking"]
+suites = None                                           # all suites (AgentDojo + AgentDyn)
+# suites = ["workspace", "slack", "travel", "banking"]    # AgentDojo
+# suites = ["shopping", "github", "dailylife"]            # AgentDyn
 
 # Model configurations: (model_name, tensor_parallel_size)
 all_models = [
     ("GPT_4O", 1),  # API model, TP size ignored
     # ("azure/gpt-4o", 1),  # Azure model, TP size ignored
-    # ("meta-llama/Llama-3.1-8B-Instruct", 1),
+    # ("facebook/Meta-SecAlign-8B", 1),
     # ("meta-llama/Llama-3.1-70B-Instruct", 4),  # Large model needs more GPUs
     # ("Qwen/Qwen3-4B-Instruct-2507", 1),
 ]
