@@ -10,7 +10,7 @@ import {
 import {
   BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
-  ScatterChart, Scatter, ZAxis, Cell as RechartsCell, ReferenceLine
+  ScatterChart, Scatter, ZAxis, Cell as RechartsCell, ReferenceLine, LabelList
 } from 'recharts';
 
 // ==========================================
@@ -992,6 +992,7 @@ const LeaderboardPage = () => {
                 {scatterData.map((entry, i) => (
                   <RechartsCell key={i} fill={SCATTER_DEFENSE_COLORS[entry.type] || '#a1a1aa'} />
                 ))}
+                <LabelList dataKey="name" position="right" offset={6} style={{ fontSize: 9, fill: '#a1a1aa', fontWeight: 500 }} />
               </Scatter>
             </ScatterChart>
           </ResponsiveContainer>
