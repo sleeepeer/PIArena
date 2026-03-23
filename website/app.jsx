@@ -189,17 +189,13 @@ const QA_DATASETS = ['squad_v2', 'dolly_qa', 'dolly_ie', 'dolly_summ'];
 const RAG_DATASETS = ['nq_rag', 'msmarco_rag', 'hotpotqa_rag'];
 
 function getDatasetKeysByGroup(meta, group) {
-  const allKeys = Object.keys(meta.datasets);
   if (group === 'all') {
-    return allKeys.filter(d => {
+    return Object.keys(meta.datasets).filter(d => {
       const g = meta.datasets[d]?.group;
       return g === 'short' || g === 'long';
     });
   }
-  if (group === 'qa') return allKeys.filter(d => QA_DATASETS.includes(d));
-  if (group === 'rag') return allKeys.filter(d => RAG_DATASETS.includes(d));
-  if (group === 'long') return allKeys.filter(d => meta.datasets[d]?.group === 'long');
-  return allKeys.filter(d => meta.datasets[d]?.group === group);
+  return Object.keys(meta.datasets).filter(d => meta.datasets[d]?.group === group);
 }
 
 function getCoreDatasetKeys(meta) {
@@ -704,9 +700,8 @@ const HomePage = ({ setActive }) => (
 
 const DATASET_GROUPS = [
   { id: 'all', label: 'All Datasets' },
-  { id: 'qa', label: 'QA' },
-  { id: 'rag', label: 'RAG' },
-  { id: 'long', label: 'Long Context' },
+  { id: 'short', label: 'Short-Context' },
+  { id: 'long', label: 'Long-Context' },
 ];
 
 const DEFENSE_TYPE_FILTERS = [
@@ -742,11 +737,25 @@ const FilterSelect = ({ label, value, onChange, options, className = '' }) => (
   </div>
 );
 
+const DATASET_CATEGORIES = [
+  { label: 'QA', keys: QA_DATASETS },
+  { label: 'RAG', keys: RAG_DATASETS },
+  { label: 'Long Context', filter: (meta) => Object.keys(meta.datasets).filter(d => meta.datasets[d]?.group === 'long') },
+];
+
 const DatasetChips = ({ meta, group, selected, onToggle, onSelectAll, onDeselectAll }) => {
   const datasets = getDatasetKeysByGroup(meta, group);
   if (datasets.length === 0) return null;
   const allSelected = datasets.every(ds => selected.includes(ds));
-  const noneSelected = datasets.every(ds => !selected.includes(ds));
+
+  // Build visible categories: only show categories that have datasets in current group
+  const categories = DATASET_CATEGORIES
+    .map(cat => ({
+      label: cat.label,
+      items: (cat.keys || cat.filter(meta)).filter(d => datasets.includes(d)),
+    }))
+    .filter(cat => cat.items.length > 0);
+
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <button
@@ -760,24 +769,29 @@ const DatasetChips = ({ meta, group, selected, onToggle, onSelectAll, onDeselect
       >
         {allSelected ? 'Deselect All' : 'Select All'}
       </button>
-      <span className="w-px h-5 bg-zinc-200 mx-0.5" />
-      {datasets.map(ds => {
-        const active = selected.includes(ds);
-        return (
-          <button
-            key={ds}
-            onClick={() => onToggle(ds)}
-            className={cn(
-              "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
-              active
-                ? "bg-zinc-900 text-white shadow-sm"
-                : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700"
-            )}
-          >
-            {meta.datasets[ds]?.display || ds}
-          </button>
-        );
-      })}
+      {categories.map((cat, ci) => (
+        <React.Fragment key={cat.label}>
+          <span className="h-5 mx-1 border-l border-dashed border-zinc-300" />
+          <span className="text-[10px] text-zinc-400 font-medium mr-0.5">{cat.label}</span>
+          {cat.items.map(ds => {
+            const active = selected.includes(ds);
+            return (
+              <button
+                key={ds}
+                onClick={() => onToggle(ds)}
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-xs font-medium transition-all",
+                  active
+                    ? "bg-zinc-900 text-white shadow-sm"
+                    : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 hover:text-zinc-700"
+                )}
+              >
+                {meta.datasets[ds]?.display || ds}
+              </button>
+            );
+          })}
+        </React.Fragment>
+      ))}
       <span className="text-[10px] text-zinc-400 ml-1">{selected.filter(s => datasets.includes(s)).length}/{datasets.length}</span>
     </div>
   );
