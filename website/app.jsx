@@ -10,7 +10,7 @@ import {
 import {
   BarChart as RechartsBarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid,
-  ScatterChart, Scatter, ZAxis, Cell as RechartsCell, ReferenceLine, Customized
+  ScatterChart, Scatter, ZAxis, Cell as RechartsCell, ReferenceLine
 } from 'recharts';
 
 // ==========================================
@@ -708,9 +708,9 @@ const DEFENSE_TYPE_FILTERS = [
 ];
 
 const CHART_COLORS = {
-  direct: '#10b981',      // Emerald (good-ish — easiest to defend)
-  combined: '#f59e0b',    // Amber (medium difficulty)
-  strategy: '#f43f5e',    // Rose (hardest — adaptive)
+  direct: '#fca5a5',      // Red-300 (shallowest — easiest to defend)
+  combined: '#ef4444',    // Red-500 (medium)
+  strategy: '#991b1b',    // Red-900 (deepest — adaptive, hardest)
   none: '#6ee7b7',
 };
 
@@ -816,7 +816,7 @@ const ScatterTooltipContent = ({ active, payload }) => {
   );
 };
 
-// Compute ellipse bounds per defense type for scatter plot
+// Compute ellipse bounds per defense type for scatter plot overlay
 function computeDefenseEllipses(data) {
   const groups = {};
   data.forEach(d => {
@@ -830,42 +830,64 @@ function computeDefenseEllipses(data) {
       const utils = pts.map(p => p.utility);
       const cx = (Math.min(...asrs) + Math.max(...asrs)) / 2;
       const cy = (Math.min(...utils) + Math.max(...utils)) / 2;
-      const rx = Math.max((Math.max(...asrs) - Math.min(...asrs)) / 2 + 4, 6);
-      const ry = Math.max((Math.max(...utils) - Math.min(...utils)) / 2 + 4, 6);
+      const rx = Math.max((Math.max(...asrs) - Math.min(...asrs)) / 2 + 5, 5);
+      const ry = Math.max((Math.max(...utils) - Math.min(...utils)) / 2 + 5, 5);
       return { type, cx, cy, rx, ry };
     });
 }
 
-const DefenseRangeEllipses = ({ xAxisMap, yAxisMap, scatterData }) => {
-  const xAxis = xAxisMap && Object.values(xAxisMap)[0];
-  const yAxis = yAxisMap && Object.values(yAxisMap)[0];
-  if (!xAxis || !yAxis) return null;
+// SVG overlay positioned absolutely on top of the ResponsiveContainer
+const ScatterEllipseOverlay = ({ scatterData, chartMargin, width, height }) => {
+  const ref = React.useRef(null);
+  const [size, setSize] = React.useState({ w: 0, h: 0 });
+
+  React.useEffect(() => {
+    if (!ref.current) return;
+    const parent = ref.current.parentElement;
+    if (!parent) return;
+    const obs = new ResizeObserver(entries => {
+      const { width: w, height: h } = entries[0].contentRect;
+      setSize({ w, h });
+    });
+    obs.observe(parent);
+    return () => obs.disconnect();
+  }, []);
+
   const ellipses = computeDefenseEllipses(scatterData);
+  if (ellipses.length === 0 || size.w === 0) return <div ref={ref} />;
+
+  // Chart plot area = total size minus margins
+  const m = chartMargin;
+  const plotW = size.w - m.left - m.right;
+  const plotH = size.h - m.top - m.bottom;
+
+  // Domain is [0, 100] for both axes
+  const toX = (v) => m.left + (v / 100) * plotW;
+  const toY = (v) => m.top + (1 - v / 100) * plotH; // Y inverted
+
   return (
-    <g>
-      {ellipses.map(({ type, cx, cy, rx, ry }) => {
-        const pxCx = xAxis.scale(cx);
-        const pxCy = yAxis.scale(cy);
-        const pxRx = Math.abs(xAxis.scale(cx + rx) - pxCx);
-        const pxRy = Math.abs(yAxis.scale(cy + ry) - pxCy);
-        const color = SCATTER_DEFENSE_COLORS[type] || '#a1a1aa';
-        return (
-          <ellipse
-            key={type}
-            cx={pxCx}
-            cy={pxCy}
-            rx={pxRx}
-            ry={pxRy}
-            fill={color}
-            fillOpacity={0.06}
-            stroke={color}
-            strokeOpacity={0.3}
-            strokeWidth={1.5}
-            strokeDasharray="4 3"
-          />
-        );
-      })}
-    </g>
+    <div ref={ref} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+      <svg width={size.w} height={size.h} style={{ position: 'absolute', top: 0, left: 0 }}>
+        {ellipses.map(({ type, cx, cy, rx, ry }) => {
+          const color = SCATTER_DEFENSE_COLORS[type] || '#a1a1aa';
+          return (
+            <ellipse
+              key={type}
+              cx={toX(cx)}
+              cy={toY(cy)}
+              rx={(rx / 100) * plotW}
+              ry={(ry / 100) * plotH}
+              fill={color}
+              fillOpacity={0.07}
+              stroke={color}
+              strokeOpacity={0.35}
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+            />
+          );
+        })}
+      </svg>
+    </div>
   );
 };
 
@@ -1031,23 +1053,25 @@ const LeaderboardPage = () => {
               </select>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
-              <XAxis type="number" dataKey="asr" name="ASR" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'ASR (%) →', position: 'insideBottom', offset: -5, fontSize: 11, fill: '#a1a1aa' }} />
-              <YAxis type="number" dataKey="utility" name="Utility" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'Utility (%)', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11, fill: '#a1a1aa' }} />
-              <ZAxis range={[80, 80]} />
-              <Tooltip content={<ScatterTooltipContent />} />
-              <ReferenceLine x={50} stroke="#e4e4e7" strokeDasharray="3 3" />
-              <ReferenceLine y={50} stroke="#e4e4e7" strokeDasharray="3 3" />
-              <Customized component={(props) => <DefenseRangeEllipses {...props} scatterData={scatterData} />} />
-              <Scatter data={scatterData} shape="circle">
-                {scatterData.map((entry, i) => (
-                  <RechartsCell key={i} fill={SCATTER_DEFENSE_COLORS[entry.type] || '#a1a1aa'} />
-                ))}
-              </Scatter>
-            </ScatterChart>
-          </ResponsiveContainer>
+          <div style={{ position: 'relative' }}>
+            <ScatterEllipseOverlay scatterData={scatterData} chartMargin={{ top: 10, right: 20, left: 35, bottom: 25 }} />
+            <ResponsiveContainer width="100%" height={300}>
+              <ScatterChart margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                <XAxis type="number" dataKey="asr" name="ASR" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'ASR (%) →', position: 'insideBottom', offset: -5, fontSize: 11, fill: '#a1a1aa' }} />
+                <YAxis type="number" dataKey="utility" name="Utility" domain={[0, 100]} tick={{ fontSize: 11, fill: '#71717a' }} label={{ value: 'Utility (%)', angle: -90, position: 'insideLeft', offset: 10, fontSize: 11, fill: '#a1a1aa' }} />
+                <ZAxis range={[80, 80]} />
+                <Tooltip content={<ScatterTooltipContent />} />
+                <ReferenceLine x={50} stroke="#e4e4e7" strokeDasharray="3 3" />
+                <ReferenceLine y={50} stroke="#e4e4e7" strokeDasharray="3 3" />
+                <Scatter data={scatterData} shape="circle">
+                  {scatterData.map((entry, i) => (
+                    <RechartsCell key={i} fill={SCATTER_DEFENSE_COLORS[entry.type] || '#a1a1aa'} />
+                  ))}
+                </Scatter>
+              </ScatterChart>
+            </ResponsiveContainer>
+          </div>
           <div className="flex justify-center gap-4 mt-2 text-[10px] font-medium text-zinc-400">
             {Object.entries(SCATTER_DEFENSE_COLORS).filter(([k]) => k !== 'Baseline').map(([k, c]) => (
               <span key={k} className="flex items-center gap-1">
