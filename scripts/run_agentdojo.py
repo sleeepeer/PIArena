@@ -10,7 +10,7 @@ def run(model, attack, defense, suites=None, tensor_parallel_size=1, name="test"
 
     if suites:
         suite_suffix = "-" + "_".join(suites)
-        suite_args = "--suite " + " ".join(suites)
+        suite_args = " ".join(f"--suite {s}" for s in suites)
     else:
         suite_suffix = ""
         suite_args = ""

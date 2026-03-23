@@ -312,9 +312,10 @@ def run_agentdojo_benchmark(args, model_type: str, azure_model_name: str = None)
     if args.defense != "none":
         cmd.extend(["--defense", "piarena"])
 
-    # Add suite if specified
+    # Add suite(s) if specified
     if args.suite:
-        cmd.extend(["-s", args.suite])
+        for suite in args.suite:
+            cmd.extend(["-s", suite])
 
     # Add user tasks if specified
     if args.user_tasks:
@@ -374,7 +375,7 @@ def main(args):
         print(f"  Type:     API")
     print(f"  Attack:   {args.attack}")
     print(f"  Defense:  {args.defense}")
-    print(f"  Suite:    {args.suite or 'all'}")
+    print(f"  Suite:    {', '.join(args.suite) if args.suite else 'all'}")
     if model_type == "huggingface":
         print(f"  TP Size:  {args.tensor_parallel_size}")
     print("="*60)
@@ -423,9 +424,10 @@ if __name__ == "__main__":
                                  "datasentinel", "piguard", "attentiontracker",
                                  "promptarmor", "promptlocate"],
                         help="Defense to evaluate")
-    parser.add_argument("--suite", "-s", type=str, default=None,
-                        choices=["workspace", "slack", "travel", "banking"],
-                        help="Specific suite to evaluate (default: all)")
+    parser.add_argument("--suite", "-s", type=str, nargs="*", default=None,
+                        choices=["workspace", "slack", "travel", "banking",
+                                 "shopping", "github", "dailylife"],
+                        help="Specific suite(s) to evaluate (default: all)")
     parser.add_argument("--user_tasks", "-ut", type=str, nargs="*", default=None,
                         help="Specific user tasks to evaluate")
     parser.add_argument("--tensor_parallel_size", type=int, default=1,
