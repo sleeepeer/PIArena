@@ -91,6 +91,27 @@
       "samples": 100,
       "group": "long"
     },
+    "injecagent": {
+      "display": "InjecAgent",
+      "type": "Agent",
+      "metric": "Keyword",
+      "samples": null,
+      "group": "agent"
+    },
+    "agentdojo": {
+      "display": "AgentDojo",
+      "type": "Agent",
+      "metric": "Task-specific",
+      "samples": null,
+      "group": "agent"
+    },
+    "agentdyn": {
+      "display": "AgentDyn",
+      "type": "Agent",
+      "metric": "Task-specific",
+      "samples": null,
+      "group": "agent"
+    },
     "wasp": {
       "display": "WASP",
       "type": "Agent",

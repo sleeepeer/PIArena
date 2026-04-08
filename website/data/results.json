@@ -4025,7 +4025,7 @@
         "defense": "datasentinel",
         "llm": "gpt-4o",
         "utility": null,
-        "asr": 24
+        "asr": 25
       },
       {
         "dataset": "wasp",
@@ -4033,7 +4033,7 @@
         "defense": "promptguard",
         "llm": "gpt-4o",
         "utility": null,
-        "asr": 40
+        "asr": 2
       },
       {
         "dataset": "wasp",
@@ -4266,6 +4266,35 @@
         "llm": "qwen3-4b",
         "utility": null,
         "asr": 2
-      }
+      },
+      { "dataset": "injecagent", "attack": "default", "defense": "none",             "llm": "qwen3-4b", "utility": null, "asr": 29 },
+      { "dataset": "injecagent", "attack": "default", "defense": "pisanitizer",      "llm": "qwen3-4b", "utility": null, "asr": 3  },
+      { "dataset": "injecagent", "attack": "default", "defense": "secalign",         "llm": "qwen3-4b", "utility": null, "asr": 1  },
+      { "dataset": "injecagent", "attack": "default", "defense": "datafilter",       "llm": "qwen3-4b", "utility": null, "asr": 0  },
+      { "dataset": "injecagent", "attack": "default", "defense": "promptarmor",      "llm": "qwen3-4b", "utility": null, "asr": 5  },
+      { "dataset": "injecagent", "attack": "default", "defense": "datasentinel",     "llm": "qwen3-4b", "utility": null, "asr": 2  },
+      { "dataset": "injecagent", "attack": "default", "defense": "promptguard",      "llm": "qwen3-4b", "utility": null, "asr": 0  },
+      { "dataset": "injecagent", "attack": "default", "defense": "attentiontracker", "llm": "qwen3-4b", "utility": null, "asr": 1  },
+      { "dataset": "injecagent", "attack": "default", "defense": "piguard",          "llm": "qwen3-4b", "utility": null, "asr": 0  },
+
+      { "dataset": "agentdojo", "attack": "default", "defense": "none",             "llm": "qwen3-4b", "utility": 52,   "asr": 42 },
+      { "dataset": "agentdojo", "attack": "default", "defense": "pisanitizer",      "llm": "qwen3-4b", "utility": 63,   "asr": 7  },
+      { "dataset": "agentdojo", "attack": "default", "defense": "secalign",         "llm": "qwen3-4b", "utility": 19,   "asr": 0  },
+      { "dataset": "agentdojo", "attack": "default", "defense": "datafilter",       "llm": "qwen3-4b", "utility": 68,   "asr": 8  },
+      { "dataset": "agentdojo", "attack": "default", "defense": "promptarmor",      "llm": "qwen3-4b", "utility": 38,   "asr": 6  },
+      { "dataset": "agentdojo", "attack": "default", "defense": "datasentinel",     "llm": "qwen3-4b", "utility": null, "asr": 32 },
+      { "dataset": "agentdojo", "attack": "default", "defense": "promptguard",      "llm": "qwen3-4b", "utility": null, "asr": 22 },
+      { "dataset": "agentdojo", "attack": "default", "defense": "attentiontracker", "llm": "qwen3-4b", "utility": null, "asr": 6  },
+      { "dataset": "agentdojo", "attack": "default", "defense": "piguard",          "llm": "qwen3-4b", "utility": null, "asr": 15 },
+
+      { "dataset": "agentdyn", "attack": "default", "defense": "none",             "llm": "qwen3-4b", "utility": 56,   "asr": 40 },
+      { "dataset": "agentdyn", "attack": "default", "defense": "pisanitizer",      "llm": "qwen3-4b", "utility": 43,   "asr": 7  },
+      { "dataset": "agentdyn", "attack": "default", "defense": "secalign",         "llm": "qwen3-4b", "utility": 7,    "asr": 4  },
+      { "dataset": "agentdyn", "attack": "default", "defense": "datafilter",       "llm": "qwen3-4b", "utility": 25,   "asr": 3  },
+      { "dataset": "agentdyn", "attack": "default", "defense": "promptarmor",      "llm": "qwen3-4b", "utility": 6,    "asr": 1  },
+      { "dataset": "agentdyn", "attack": "default", "defense": "datasentinel",     "llm": "qwen3-4b", "utility": null, "asr": 39 },
+      { "dataset": "agentdyn", "attack": "default", "defense": "promptguard",      "llm": "qwen3-4b", "utility": null, "asr": 28 },
+      { "dataset": "agentdyn", "attack": "default", "defense": "attentiontracker", "llm": "qwen3-4b", "utility": null, "asr": 1  },
+      { "dataset": "agentdyn", "attack": "default", "defense": "piguard",          "llm": "qwen3-4b", "utility": null, "asr": 4  }
     ]
   }
