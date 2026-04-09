@@ -32,6 +32,8 @@
 * **Systematic Evaluation Benchmark** – End-to-end evaluation pipeline enables you to easily evaluate attacks / defenses on various datasets.
 * **Add Your Own** – You can also easily integrate your own attack or defense into our benchmark to systematically assess how well it perform.
 
+## News
+[4/9/2026] 🎉 PIArena is accepted to ACL 2026 Main, see you in San Diego!
 
 ## Table of Contents
 
