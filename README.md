@@ -18,8 +18,8 @@
   <a href="https://piarena.vercel.app/#/leaderboard" target="_blank">
     <img src="https://img.shields.io/badge/📊-LeaderBoard-blue?style=flat-rounded" alt="LeaderBoard">
   </a>
-  <a href="#" target="_blank">
-    <img src="https://img.shields.io/badge/📄-Paper (Coming soon)-red?style=flat-rounded" alt="Paper">
+  <a href="https://arxiv.org/abs/2604.08499" target="_blank">
+    <img src="https://img.shields.io/badge/📄-Paper-red?style=flat-rounded" alt="Paper">
   </a>
   <a href="https://github.com/sleeepeer/PIArena">
     <img src="https://img.shields.io/badge/⭐-Give PIArena a Star-gold?style=flat&logo=github" alt="Star">
@@ -205,7 +205,7 @@ You can go to `piarena/attacks` or `piarena/defenses` to see the attack & defens
 Please see [Contributing](). -->
 
 
-<!-- ## Citation
+## Citation
 
 If you find our paper or the code useful, please kindly cite the following paper:
 
@@ -213,6 +213,7 @@ If you find our paper or the code useful, please kindly cite the following paper
 @article{geng2026piarena,
   title={PIArena: A Platform for Prompt Injection Evaluation},
   author={Geng, Runpeng and Yin, Chenlong and Wang, Yanting and Chen, Ying and Jia, Jinyuan},
+  journal={arXiv preprint arXiv:2604.08499},
   year={2026}
 }
-``` -->
+```
