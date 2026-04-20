@@ -199,11 +199,20 @@ class Model():
             generated_text = self.model.query(messages)
         else: # HF models
             messages = self._normalize_messages(messages)
-            input_ids = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt").to(self.model.device)
-            attention_mask = torch.ones_like(input_ids).to(self.model.device)
+            tokenized = self.tokenizer.apply_chat_template(messages, add_generation_prompt=True, return_tensors="pt")
+            # In transformers >=5 apply_chat_template returns a BatchEncoding by default
+            # even when tokenize=True; older versions return a bare LongTensor. Handle both.
+            if hasattr(tokenized, "input_ids"):
+                input_ids = tokenized["input_ids"].to(self.model.device)
+                attention_mask = tokenized.get(
+                    "attention_mask", torch.ones_like(tokenized["input_ids"])
+                ).to(self.model.device)
+            else:
+                input_ids = tokenized.to(self.model.device)
+                attention_mask = torch.ones_like(input_ids).to(self.model.device)
             inputs = {
                 "input_ids": input_ids,
-                "attention_mask": attention_mask
+                "attention_mask": attention_mask,
             }
                 
             outputs = self.model.generate(
@@ -216,6 +225,19 @@ class Model():
                 pad_token_id=self.tokenizer.pad_token_id,
             )
             generated_text = self.tokenizer.decode(outputs[0][len(inputs["input_ids"][0]):], skip_special_tokens=True)
+        # Post-process reasoning-style models (Qwen3.5 with native <think>...</think> blocks):
+        # strip the thinking prefix so downstream evaluators see only the final answer.
+        # Keep the raw text on `self.last_raw_response` and log a compact notice for inspection.
+        if "</think>" in generated_text:
+            self.last_raw_response = generated_text
+            thinking, _, final = generated_text.rpartition("</think>")
+            thinking = thinking.strip()
+            final = final.lstrip()
+            import sys
+            sys.stderr.write(
+                f"[reasoning-strip] think_chars={len(thinking)} final_preview={final[:160]!r}\n"
+            )
+            return final
         return generated_text
 
     def batch_query(
