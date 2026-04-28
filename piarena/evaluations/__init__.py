@@ -7,6 +7,10 @@ from .longbench_metrics import (
 from .llm_judge import (
     llm_judge,
     llm_judge_batch,
+    llm_judge_utility,
+    llm_judge_asr,
+    llm_judge_utility_batch,
+    llm_judge_asr_batch,
 )
 from .open_prompt_injection_metrics import (
     open_prompt_injection_utility,

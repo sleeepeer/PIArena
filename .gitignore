@@ -179,3 +179,5 @@ website-example
 node_modules/
 
 plans/
+
+verify_scripts/

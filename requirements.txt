@@ -1,23 +1,44 @@
-transformers
-torch
-torchvision
-torchaudio
+# PIArena Python dependencies.
+#
+# Canonical installer: scripts/setup_piarena_vllm_env.sh
+#
+# On Delta-AI (aarch64 Grace Hopper) the env build needs these modules first:
+#   module load gcc/11.4.0 cuda/12.6.1 cuda-compat/12.9
+#
+# torch and vllm are pinned together: vllm==0.19.1 hard-requires torch==2.10.0.
+# Do NOT pin torch separately; pip will pull the right cu12.9 wheel via the
+# pytorch.org/whl/cu129 extra index. On other CUDA versions, swap accordingly.
+
+# --- vLLM stack (Phase 1 / Phase 3) ---
+vllm==0.19.1
+
+# --- Provider clients ---
 openai
-scipy
-numpy
-rich
-datasets
-scikit-learn
-fuzzywuzzy
-rouge
-accelerate
-huggingface-hub
-jieba
-levenshtein
-spacy
-vllm
-fschat[model_worker,webui]
-bitsandbytes
 google-generativeai
 google-genai
 anthropic
+
+# --- Model / data libs ---
+transformers>=4.57,<4.60
+tokenizers
+accelerate>=1.13
+datasets>=3.5
+huggingface-hub>=0.36
+safetensors
+sentencepiece
+
+# --- Eval / metrics ---
+scipy
+numpy
+scikit-learn
+rouge
+fuzzywuzzy
+levenshtein
+spacy
+jieba
+rich
+
+# --- Misc ---
+fschat[model_worker,webui]
+bitsandbytes
+pyyaml

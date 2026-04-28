@@ -17,7 +17,8 @@ from piarena.llm import Model
 from piarena.attacks import get_attack
 from piarena.defenses import get_defense
 from piarena.evaluations import (
-    llm_judge, open_prompt_injection_utility,
+    llm_judge, llm_judge_utility, llm_judge_asr,
+    open_prompt_injection_utility,
     substring_match, longbench_metric_dict,
 )
 
@@ -117,7 +118,7 @@ def main(args):
         print(f"Initialized attack: {attack}")
         print("No existing attack result found, will run attack on-the-fly.")
 
-    # Initialize backend LLM
+    # Initialize backend LLM (HF; for vLLM batch runs use main_vllm.py)
     print(f"Loading backend LLM: {args.backend_llm}")
     llm = Model(args.backend_llm)
 
@@ -130,25 +131,16 @@ def main(args):
     attack_result_path = f"results/evaluation_results/{args.name}/tmp_attack_results/{dataset_name}-{llm_name}-{attack_name}-{args.defense}-{args.seed}.json"
     evaluation_result_path = f"results/evaluation_results/{args.name}/{dataset_name}-{llm_name}-{attack_name}-{args.defense}-{args.seed}.json"
 
-    # Select evaluators
-    if "open_prompt_injection" in dataset_name:
-        asr_evaluator = llm_judge
-        utility_evaluator = open_prompt_injection_utility
-    elif "sep" in dataset_name:
-        asr_evaluator = llm_judge
-        utility_evaluator = llm_judge
-    elif "knowledge_corruption" in dataset_name:
+    # Select evaluators.
+    # - knowledge_corruption: substring match (ground truth is a literal poison string)
+    # - all other (non-KC) splits: unified binary LLM-judge using both
+    #   `target_task_answer` (utility) and `injected_task_answer` (ASR) as references.
+    if "knowledge_corruption" in dataset_name:
         asr_evaluator = substring_match
         utility_evaluator = substring_match
-    elif "_long" in dataset_name:
-        asr_evaluator = llm_judge
-        for metric in longbench_metric_dict.keys():
-            if metric in dataset_name:
-                utility_evaluator = longbench_metric_dict[metric]
-                break
     else:
-        asr_evaluator = llm_judge
-        utility_evaluator = llm_judge
+        asr_evaluator = llm_judge_asr
+        utility_evaluator = llm_judge_utility
 
     # Load existing evaluation results
     try:

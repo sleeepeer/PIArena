@@ -9,18 +9,23 @@ This is the public repo of PIArena — do not leak private info. PIArena is a pl
 ## Common Commands
 
 ```bash
-# Setup
-conda create -n piarena python=3.10 -y && conda activate piarena
-pip install -r requirements.txt
-pip install -e .  # Install piarena as editable package (required for batch scripts)
-# torch/vllm are commented out in requirements.txt — install separately for your CUDA version
 huggingface-cli login
 
-# Run single evaluation (requires GPU)
-python main.py --dataset open_prompt_injection --attack combined --defense pisanitizer
+# Generic setup (other machines)
+conda create -n piarena python=3.12 -y && conda activate piarena
+pip install -r requirements.txt
+pip install -e .
+
+# Run single evaluation. main.py uses HF (sample-by-sample). main_vllm.py uses vLLM (batched).
+python main.py --dataset squad_v2 --attack combined --defense pisanitizer
 python main.py --config configs/experiments/my_experiment.yaml
 
-# Search-based attacks: PAIR, TAP, strategy_search (needs backend + attacker LLMs)
+# Same pipeline on vLLM, batched across attack/defense/judge for higher throughput.
+python main_vllm.py --dataset squad_v2 --attack combined --defense pisanitizer \
+    --backend_llm Qwen/Qwen3.5-9B --judge_llm Qwen/Qwen3-4B-Instruct-2507 \
+    --tp_size 1 --gpu_mem 0.85 --max_model_len 8192
+
+# Search-based attacks: PAIR, TAP, strategy_search (HF backend; needs backend + attacker LLMs)
 python main_search.py --attack pair --backend_llm <model> --attacker_llm <model> --defense pisanitizer
 python main_search.py --attack tap --backend_llm <model> --attacker_llm <model> --defense pisanitizer
 python main_search.py --attack strategy_search --backend_llm <model> --attacker_llm <model> --defense pisanitizer --batch_size 8
@@ -66,24 +71,30 @@ Global `ATTACK_REGISTRY` and `DEFENSE_REGISTRY` use `@registry.register` decorat
 
 ### LLM Backend Selection (`piarena/llm.py`)
 
-The `Model` class selects backend by model name string:
-- Contains `azure` → Azure OpenAI (config from `configs/azure_configs/`)
-- Contains `google` → Google GenAI (config from `configs/google_configs/`)
-- Contains `anthropic` → Anthropic SDK (config from `configs/anthropic_configs/`)
-- Everything else → HuggingFace Transformers (loaded via `AutoModelForCausalLM`)
+The `Model` class picks a backend by:
+1. **Provider keyword in model id** (highest priority): `azure` / `openai` / `google` / `anthropic` route to provider SDKs (configs under `configs/<provider>_configs/`).
+2. **Explicit `backend=` kwarg** for HF identifiers: `"hf"` (default) or `"vllm"`.
+
+vLLM tunables are constructor kwargs with sensible defaults; `main_vllm.py` exposes them as CLI flags:
+- `tp_size` (default 1)
+- `gpu_mem` (default 0.85)
+- `max_model_len` (default 8192)
+- `max_num_seqs` (default 256)
+- `enforce_eager` (default False)
+
+Reasoning models (Qwen3+, R1-style): `Model` calls `apply_chat_template(..., enable_thinking=False)` when supported and post-strips any `</think>` block as a safety net. The stripped reasoning text is exposed as `model.last_reasoning` for callers that want it.
 
 Query interface: `model.query(messages, max_new_tokens=1024, temperature=0.01)` where `messages` is a list of `{"role": str, "content": str}` dicts. Batch interface: `model.batch_query(messages_list, ...)`.
 
-### Evaluator Selection (in `main.py`)
+Judge LLM: default model is `Qwen/Qwen3-4B-Instruct-2507`. Sample-by-sample callers (`main.py`) lazy-load it via `_ensure_judge()` (HF backend). Batch callers (`main_vllm.py`) explicitly construct a vLLM judge and pass it through the `llm=` kwarg of `llm_judge_utility_batch` / `llm_judge_asr_batch`.
 
-Evaluator is chosen by dataset name pattern:
-- `open_prompt_injection` → `llm_judge` + `open_prompt_injection_utility`
-- `sep` → `llm_judge` + `llm_judge`
-- `knowledge_corruption` → `substring_match` + `substring_match`
-- `*_long` → `llm_judge` + LongBench metrics (qa_f1, rouge, retrieval, code_sim)
-- Default → `llm_judge` + `llm_judge`
+### Evaluator Selection
 
-The `llm_judge` uses `Qwen/Qwen3-4B-Instruct-2507` by default (globally cached).
+`main.py` (HF, sample-by-sample): `knowledge_corruption` splits use `substring_match` for both utility and ASR; every other split uses the unified binary `llm_judge_utility` (reference = `target_task_answer`) + `llm_judge_asr` (reference = `injected_task_answer`).
+
+`main_vllm.py` (vLLM, batched): same routing, but uses the batched `llm_judge_utility_batch` / `llm_judge_asr_batch` so the judge runs in one vLLM call per chunk.
+
+`main_search.py` keeps the original per-pattern table (`open_prompt_injection`, `sep`, `*_long`, etc.) since search runs already drive their own legacy evaluators.
 
 ### Adding New Attacks/Defenses
 
@@ -114,7 +125,8 @@ CLI args > YAML config (`configs/experiments/`) > hardcoded defaults. YAML suppo
 
 ### Entry Points
 
-- `main.py` — Main evaluation pipeline (GPU required)
+- `main.py` — Standard evaluation pipeline, HF backend, sample-by-sample
+- `main_vllm.py` — Same pipeline on vLLM with batched attack/defense/judge phases (set `--judge_llm same` to share the engine with the backend LLM)
 - `main_search.py` — Search-based attacks: PAIR, TAP, strategy_search
   - `pair` / `tap` still use an eager attacker model object
   - `strategy_search` accepts an attacker model path and lazily loads `attacker_llm` only if a non-vLLM fallback is needed
