@@ -48,7 +48,6 @@ all_defenses = [
     # "pisanitizer",
     # "attentiontracker",
     # "promptguard",
-    # "promptlocate",
     # "promptarmor",
     # "datasentinel",
     # "datafilter",

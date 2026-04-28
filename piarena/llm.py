@@ -461,11 +461,16 @@ class Model:
             pad_token_id=self.tokenizer.pad_token_id,
         )
 
-        input_lengths = tokenized["attention_mask"].sum(dim=1).tolist()
+        # Tokenizer is left-padded (`padding_side = "left"` in `_load_hf`), so the
+        # real prompt sits at positions `[max_len - N, max_len)` while pad tokens
+        # occupy `[0, max_len - N)`. Slicing by `attention_mask.sum() == N` keeps
+        # the real prompt in the decoded text; we have to slice from the padded
+        # input length to drop the prompt cleanly.
+        prompt_len = tokenized["input_ids"].shape[1]
         finals: List[str] = []
         last: Optional[str] = None
-        for output, input_len in zip(outputs, input_lengths):
-            text = self.tokenizer.decode(output[input_len:], skip_special_tokens=True)
+        for output in outputs:
+            text = self.tokenizer.decode(output[prompt_len:], skip_special_tokens=True)
             final, reasoning = _split_reasoning(text)
             if reasoning is not None:
                 last = reasoning
