@@ -210,10 +210,12 @@ Please see [Contributing](). -->
 If you find our paper or the code useful, please kindly cite the following paper:
 
 ```bib
-@article{geng2026piarena,
-  title={PIArena: A Platform for Prompt Injection Evaluation},
+@inproceedings{geng2026piarena,
+  title={{PIArena}: A platform for prompt injection evaluation},
   author={Geng, Runpeng and Yin, Chenlong and Wang, Yanting and Chen, Ying and Jia, Jinyuan},
-  journal={arXiv preprint arXiv:2604.08499},
+  booktitle={Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)},
+  pages={33170--33192},
   year={2026}
+}
 }
 ```
