@@ -217,5 +217,4 @@ If you find our paper or the code useful, please kindly cite the following paper
   pages={33170--33192},
   year={2026}
 }
-}
 ```
